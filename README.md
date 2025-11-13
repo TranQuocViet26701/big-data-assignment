@@ -4,20 +4,39 @@ Build an inverted index from Project Gutenberg books using Hadoop MapReduce.
 
 ---
 
-## 🚀 Quick Start (3 Commands)
+## 🚀 Quick Start
+
+### Option 1: Single Command Pipeline (Recommended)
+
+Process any number of books with automatic directory management:
 
 ```bash
-# 1. Create HDFS directory
-hdfs dfs -mkdir -p /gutenberg-input
+# Process 100 books with 4 reducers
+./run_pipeline.sh --num-books 100 --reducers 4
 
-# 2. Download books and upload to HDFS
-python3 donwload_file.py
+# Process 200 books with 8 reducers
+./run_pipeline.sh --num-books 200 --reducers 8
 
-# 3. Run MapReduce job
-./run_inverted_index_mapreduce.sh 2
+# Process 500 books with 12 reducers
+./run_pipeline.sh --num-books 500 --reducers 12
 ```
 
-**Time:** ~5-10 minutes | **Result:** Inverted index in `/gutenberg-output`
+**Result:**
+- Input: `/gutenberg-input-100`, `/gutenberg-input-200`, `/gutenberg-input-500`
+- Output: `/gutenberg-output-100`, `/gutenberg-output-200`, `/gutenberg-output-500`
+
+### Option 2: Manual Step-by-Step (For Custom Workflows)
+
+```bash
+# 1. Download 100 books and upload to custom HDFS directory
+python3 donwload_file.py --num-books 100 --hdfs-dir /gutenberg-input-100
+
+# 2. Run MapReduce job with custom paths
+./run_inverted_index_mapreduce.sh \
+    --input /gutenberg-input-100 \
+    --output /gutenberg-output-100 \
+    --reducers 4
+```
 
 ---
 
@@ -71,7 +90,89 @@ pip3 install --user --break-system-packages pandas requests beautifulsoup4 guten
 
 ---
 
-## 🎯 Step-by-Step Guide
+## 🔄 Processing Variable Dataset Sizes
+
+This project supports flexible dataset sizes through parameterized scripts. You can process 100, 200, 500, or any number of books from the master CSV file.
+
+### Workflow Options
+
+#### Option 1: Automated Pipeline (Recommended)
+
+Use the `run_pipeline.sh` master script for end-to-end automation:
+
+```bash
+# Process 100 books
+./run_pipeline.sh --num-books 100 --reducers 4
+
+# Process 200 books
+./run_pipeline.sh --num-books 200 --reducers 8
+
+# Process 500 books from rows 100-599
+./run_pipeline.sh --num-books 500 --reducers 12 --start-row 100
+
+# Skip download if data already in HDFS
+./run_pipeline.sh --num-books 100 --reducers 4 --skip-download
+```
+
+**What it does automatically:**
+1. ✅ Validates Hadoop environment
+2. ✅ Creates HDFS directories: `/gutenberg-input-{N}` and `/gutenberg-output-{N}`
+3. ✅ Downloads N books from `gutenberg_metadata.csv`
+4. ✅ Uploads to HDFS
+5. ✅ Runs MapReduce job
+6. ✅ Displays timing and statistics
+
+#### Option 2: Manual Control
+
+Run individual scripts with custom parameters:
+
+```bash
+# Step 1: Download and upload books
+python3 donwload_file.py \
+    --csv gutenberg_metadata.csv \
+    --num-books 100 \
+    --hdfs-dir /gutenberg-input-100
+
+# Step 2: Run MapReduce
+./run_inverted_index_mapreduce.sh \
+    --input /gutenberg-input-100 \
+    --output /gutenberg-output-100 \
+    --reducers 4
+```
+
+### Dataset Size Recommendations
+
+| Books | Recommended Reducers | Approx. Time* | Use Case |
+|-------|---------------------|---------------|-----------|
+| 10-50 | 2 | ~5-10 min | Testing, development |
+| 100 | 4 | ~15-20 min | Small experiments |
+| 200-500 | 8-12 | ~30-60 min | Medium datasets |
+| 500-1000 | 12-16 | ~1-2 hours | Large datasets |
+| 1000+ | 16-24 | ~2+ hours | Production scale |
+
+*Times are approximate and depend on cluster size, network speed, and hardware.
+
+### Multiple Experiments
+
+You can maintain multiple datasets in HDFS simultaneously:
+
+```bash
+# Experiment 1: First 100 books
+./run_pipeline.sh --num-books 100 --reducers 4 --start-row 0
+# Creates: /gutenberg-input-100 → /gutenberg-output-100
+
+# Experiment 2: Next 100 books
+./run_pipeline.sh --num-books 100 --reducers 4 --start-row 100
+# Creates: /gutenberg-input-100 → /gutenberg-output-100 (overwrites)
+
+# Experiment 3: Different size
+./run_pipeline.sh --num-books 200 --reducers 8
+# Creates: /gutenberg-input-200 → /gutenberg-output-200 (separate)
+```
+
+---
+
+## 🎯 Step-by-Step Guide (Basic Usage)
 
 ### Step 1: Create HDFS Directory
 
@@ -226,11 +327,15 @@ Output (HDFS)
 ## 📁 Project Files
 
 ### Core Files
+- **run_pipeline.sh** - Master orchestration script (recommended entry point)
+- **donwload_file.py** - Download books and upload to HDFS (parameterized)
+- **run_inverted_index_mapreduce.sh** - MapReduce job submission script (parameterized)
 - **inverted_index_mapper.py** - Map phase: Extract words, no external deps
 - **inverted_index_reducer.py** - Reduce phase: Build inverted index
-- **run_inverted_index_mapreduce.sh** - Main job submission script
-- **donwload_file.py** - Download books from Project Gutenberg
-- **gutenberg_metadata_2books.csv** - Book metadata
+
+### Data Files
+- **gutenberg_metadata.csv** - Master book metadata (15,331 books)
+- **gutenberg_metadata_2books.csv** - Test sample (2 books)
 
 ### Configuration
 - **requirements.txt** - Python dependencies (master node only)
@@ -244,37 +349,61 @@ Output (HDFS)
 
 ## 🔧 Customization
 
-### Add More Books
+### Process Different Numbers of Books
 
-Edit `gutenberg_metadata_2books.csv`:
+The project includes `gutenberg_metadata.csv` with 15,331 books. Process any subset:
+
+```bash
+# Process first 100 books
+./run_pipeline.sh --num-books 100 --reducers 4
+
+# Process first 200 books
+./run_pipeline.sh --num-books 200 --reducers 8
+
+# Process books 500-699 (200 books starting from row 500)
+./run_pipeline.sh --num-books 200 --reducers 8 --start-row 500
+
+# Process all books with custom CSV
+./run_pipeline.sh --csv custom_metadata.csv --num-books 1000 --reducers 16
+```
+
+### Use Custom CSV File
+
+Add your own books to a custom CSV:
 
 ```csv
 Title,Author,Link,Bookshelf
 Your Book Title,Author Name,http://www.gutenberg.org/ebooks/12345,Category
+Another Book,Another Author,http://www.gutenberg.org/ebooks/67890,Category
 ```
 
-Then re-run:
+Then process:
 ```bash
-python3 donwload_file.py
-./run_inverted_index_mapreduce.sh 2
+./run_pipeline.sh --csv custom_metadata.csv --num-books 10 --reducers 2
 ```
 
-### Adjust Reducers
+### Adjust Reducers for Performance
 
 More reducers = better parallelism for large datasets:
 
 ```bash
-# Small dataset (2-10 books)
-./run_inverted_index_mapreduce.sh 2
+# Small dataset (10-50 books)
+./run_pipeline.sh --num-books 50 --reducers 2
 
-# Medium dataset (10-100 books)
-./run_inverted_index_mapreduce.sh 8
+# Medium dataset (100-500 books)
+./run_pipeline.sh --num-books 200 --reducers 8
 
-# Large dataset (100+ books)
-./run_inverted_index_mapreduce.sh 16
+# Large dataset (500-1000 books)
+./run_pipeline.sh --num-books 1000 --reducers 16
+
+# Very large dataset (1000+ books)
+./run_pipeline.sh --num-books 2000 --reducers 24
 ```
 
-**Rule of thumb:** 1 reducer per 2-4 worker nodes
+**Rule of thumb:**
+- 1 reducer per 25-50 books
+- Or 1 reducer per 2-4 worker nodes
+- Adjust based on cluster resources
 
 ### Modify Stopwords
 
@@ -408,11 +537,12 @@ This is a Python 3.12+ security feature. Safe to bypass for user installs.
 ## 🤝 Contributing
 
 To extend this project:
-1. Add more books to CSV
-2. Modify stopwords in mapper
-3. Adjust reducer logic (filter criteria, sorting)
-4. Add more reducers for parallelism
-5. Enable output compression
+1. Process different dataset sizes (100, 200, 500, 1000+ books)
+2. Experiment with different subsets using --start-row
+3. Modify stopwords in mapper (line 17 of inverted_index_mapper.py)
+4. Adjust reducer logic (filter criteria, sorting)
+5. Optimize for your cluster size (adjust reducers)
+6. Enable output compression in run_inverted_index_mapreduce.sh
 
 ---
 
@@ -425,9 +555,11 @@ Educational project for learning Hadoop MapReduce.
 **Ready to start?**
 
 ```bash
-hdfs dfs -mkdir -p /gutenberg-input
-python3 donwload_file.py
-./run_inverted_index_mapreduce.sh 2
+# Quick start - Process 100 books with automated pipeline
+./run_pipeline.sh --num-books 100 --reducers 4
+
+# Or process 200 books
+./run_pipeline.sh --num-books 200 --reducers 8
 ```
 
-Enjoy your inverted index! 🎉
+Scale to any dataset size you need! 🎉

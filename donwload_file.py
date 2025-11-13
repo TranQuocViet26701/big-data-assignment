@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 import os
+import sys
+import argparse
 import subprocess
 from colorama import init, Fore, Style
 
@@ -50,7 +52,76 @@ def clean_text(text):
 
     return ''.join(cleaned_text)
 
-df_metadata = pd.read_csv('gutenberg_metadata_2books.csv')
+def parse_arguments():
+    parser = argparse.ArgumentParser(
+        description='Download Project Gutenberg books and upload to HDFS',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog='''
+Examples:
+  # Download 100 books to /gutenberg-input-100
+  python3 donwload_file.py --num-books 100 --hdfs-dir /gutenberg-input-100
+
+  # Download 200 books using custom CSV
+  python3 donwload_file.py --csv custom_metadata.csv --num-books 200 --hdfs-dir /gutenberg-input-200
+
+  # Download all books from CSV
+  python3 donwload_file.py --csv gutenberg_metadata.csv --hdfs-dir /gutenberg-input-all
+        '''
+    )
+
+    parser.add_argument(
+        '--csv',
+        type=str,
+        default='gutenberg_metadata.csv',
+        help='Path to CSV file containing book metadata (default: gutenberg_metadata.csv)'
+    )
+
+    parser.add_argument(
+        '--num-books',
+        type=int,
+        default=None,
+        help='Number of books to process from the CSV file (default: all books in CSV)'
+    )
+
+    parser.add_argument(
+        '--hdfs-dir',
+        type=str,
+        default='/gutenberg-input',
+        help='HDFS directory path for uploading books (default: /gutenberg-input)'
+    )
+
+    parser.add_argument(
+        '--start-row',
+        type=int,
+        default=0,
+        help='Starting row index in CSV file (default: 0)'
+    )
+
+    return parser.parse_args()
+
+# Parse command-line arguments
+args = parse_arguments()
+
+# Read CSV file
+print(Fore.CYAN + f"[INFO] Reading metadata from: {args.csv}")
+try:
+    df_metadata = pd.read_csv(args.csv)
+except FileNotFoundError:
+    print(Fore.RED + f"[ERROR] CSV file not found: {args.csv}")
+    sys.exit(1)
+
+# Limit number of books if specified
+if args.num_books is not None:
+    end_row = args.start_row + args.num_books
+    df_metadata = df_metadata.iloc[args.start_row:end_row]
+    print(Fore.CYAN + f"[INFO] Processing {len(df_metadata)} books (rows {args.start_row} to {end_row-1})")
+else:
+    if args.start_row > 0:
+        df_metadata = df_metadata.iloc[args.start_row:]
+    print(Fore.CYAN + f"[INFO] Processing all {len(df_metadata)} books from CSV")
+
+print(Fore.CYAN + f"[INFO] Target HDFS directory: {args.hdfs_dir}")
+print(Fore.CYAN + "=" * 70)
 
 data = {'Author': None, 'Title': None, 'Link': None, 'ID': None, 'Bookshelf': None, 'Text': None}
 
@@ -112,19 +183,16 @@ for key, row in df_metadata.iterrows():
 
     print(Fore.GREEN + f"[LOCAL] File {local_file} saved successfully! ({row['Title']})")
 
-    # Local and HDFS paths
-    hdfs_path = f"/gutenberg-input"
-
     # Construct the command
-    print(Fore.GREEN + f"[LOCAL] Uploading {local_file} to HDFS path {hdfs_path}...")
-    cmd = ['hdfs', 'dfs', '-put', '-f', local_file, hdfs_path]
+    print(Fore.GREEN + f"[LOCAL] Uploading {local_file} to HDFS path {args.hdfs_dir}...")
+    cmd = ['hdfs', 'dfs', '-put', '-f', local_file, args.hdfs_dir]
 
     # Run the command
     result = subprocess.run(cmd, capture_output=True, text=True)
 
     # Check result
     if result.returncode == 0:
-        print(Fore.GREEN + f"[HDFS] File {local_file} successfully uploaded to {hdfs_path}")
+        print(Fore.GREEN + f"[HDFS] File {local_file} successfully uploaded to {args.hdfs_dir}")
     else:
         print(Fore.RED + f"[HDFS] Error uploading file {local_file}: {result.stderr}")
 

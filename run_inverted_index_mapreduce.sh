@@ -6,10 +6,16 @@
 # This script executes a MapReduce job to build an inverted index from
 # Project Gutenberg books stored in HDFS.
 #
-# Usage: ./run_inverted_index_mapreduce.sh [NUM_REDUCERS]
-#   NUM_REDUCERS: Optional number of reducer tasks (default: 2)
+# Usage: ./run_inverted_index_mapreduce.sh --input <path> --output <path> --reducers <num>
 #
-# Example: ./run_inverted_index_mapreduce.sh 4
+# Parameters:
+#   --input:     HDFS input directory path (default: /gutenberg-input)
+#   --output:    HDFS output directory path (default: /gutenberg-output)
+#   --reducers:  Number of reducer tasks (default: 2)
+#
+# Examples:
+#   ./run_inverted_index_mapreduce.sh --input /gutenberg-input-100 --output /gutenberg-output-100 --reducers 4
+#   ./run_inverted_index_mapreduce.sh --input /gutenberg-input-200 --output /gutenberg-output-200 --reducers 8
 ################################################################################
 
 set -e  # Exit on error
@@ -21,12 +27,55 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-# Configuration
+# Default Configuration
 HDFS_INPUT_PATH="/gutenberg-input"
 HDFS_OUTPUT_PATH="/gutenberg-output"
 MAPPER_SCRIPT="inverted_index_mapper.py"
 REDUCER_SCRIPT="inverted_index_reducer.py"
-NUM_REDUCERS=${1:-2}  # Default to 2 reducers if not specified
+NUM_REDUCERS=2
+
+# Parse command-line arguments
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --input)
+            HDFS_INPUT_PATH="$2"
+            shift 2
+            ;;
+        --output)
+            HDFS_OUTPUT_PATH="$2"
+            shift 2
+            ;;
+        --reducers)
+            NUM_REDUCERS="$2"
+            shift 2
+            ;;
+        -h|--help)
+            echo "Usage: $0 --input <path> --output <path> --reducers <num>"
+            echo ""
+            echo "Parameters:"
+            echo "  --input      HDFS input directory path (default: /gutenberg-input)"
+            echo "  --output     HDFS output directory path (default: /gutenberg-output)"
+            echo "  --reducers   Number of reducer tasks (default: 2)"
+            echo ""
+            echo "Examples:"
+            echo "  $0 --input /gutenberg-input-100 --output /gutenberg-output-100 --reducers 4"
+            echo "  $0 --input /gutenberg-input-200 --output /gutenberg-output-200 --reducers 8"
+            exit 0
+            ;;
+        *)
+            # Support old positional argument for backwards compatibility
+            if [[ "$1" =~ ^[0-9]+$ ]]; then
+                NUM_REDUCERS="$1"
+                print_warning "Positional argument for reducers is deprecated. Use --reducers instead."
+                shift
+            else
+                echo "Unknown option: $1"
+                echo "Use --help for usage information"
+                exit 1
+            fi
+            ;;
+    esac
+done
 
 # Print colored message
 print_status() {
