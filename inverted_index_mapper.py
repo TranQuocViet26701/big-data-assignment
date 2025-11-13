@@ -15,7 +15,10 @@ MAP1:   [D_i]   -->     [term_k, URL_i@W_i]
 """
 
 import nltk
-nltk.data.path.append("/root/nltk_data")  # or path to your nltk_data
+import os
+# Support both system-wide and user-space NLTK data
+nltk.data.path.append("/root/nltk_data")  # System-wide installation
+nltk.data.path.append(os.path.expanduser("~/nltk_data"))  # User-space installation
 from nltk.corpus import stopwords
 from nltk.stem import WordNetLemmatizer
 
