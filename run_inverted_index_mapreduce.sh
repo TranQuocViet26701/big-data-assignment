@@ -236,18 +236,19 @@ print_status "Starting MapReduce job..."
 echo ""
 
 # Execute Hadoop streaming job
+# NOTE: -D options (generic options) MUST come before streaming options
 hadoop jar "$HADOOP_STREAMING_JAR" \
+    -D mapreduce.job.reduces="$NUM_REDUCERS" \
+    -D mapreduce.job.name="Inverted_Index_Project_Gutenberg" \
+    -D mapreduce.map.memory.mb=2048 \
+    -D mapreduce.reduce.memory.mb=2048 \
     -input "$HDFS_INPUT_PATH" \
     -output "$HDFS_OUTPUT_PATH" \
     -mapper "$MAPPER_SCRIPT" \
     -reducer "$REDUCER_SCRIPT" \
     -file "$MAPPER_SCRIPT" \
     -file "$REDUCER_SCRIPT" \
-    -cmdenv total_map_tasks="$INPUT_FILE_COUNT" \
-    -D mapreduce.job.reduces="$NUM_REDUCERS" \
-    -D mapreduce.job.name="Inverted_Index_Project_Gutenberg" \
-    -D mapreduce.map.memory.mb=2048 \
-    -D mapreduce.reduce.memory.mb=2048
+    -cmdenv total_map_tasks="$INPUT_FILE_COUNT"
 
 JOB_EXIT_CODE=$?
 
