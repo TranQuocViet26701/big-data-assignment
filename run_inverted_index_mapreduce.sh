@@ -106,81 +106,10 @@ fi
 print_success "HDFS is accessible"
 
 ################################################################################
-# 2. NLTK DATA SETUP
+# 2. HDFS PREPARATION
 ################################################################################
 
-print_header "Step 2: NLTK Data Setup"
-
-# Use user's home directory instead of /root (no sudo required)
-NLTK_DATA_DIR="$HOME/nltk_data"
-
-# Check if NLTK is installed
-if ! python3 -c "import nltk" 2>/dev/null; then
-    print_warning "NLTK not installed. Installing..."
-
-    # Detect if we need --break-system-packages (Python 3.12+)
-    PYTHON_VERSION=$(python3 --version 2>&1 | grep -oP '\d+\.\d+' | head -1)
-    PYTHON_MAJOR=$(echo $PYTHON_VERSION | cut -d. -f1)
-    PYTHON_MINOR=$(echo $PYTHON_VERSION | cut -d. -f2)
-
-    PIP_FLAGS="--user"
-    if [ -f /etc/debian_version ] && [ "$PYTHON_MAJOR" -ge 3 ] && [ "$PYTHON_MINOR" -ge 12 ]; then
-        PIP_FLAGS="--user --break-system-packages"
-        print_status "Python $PYTHON_VERSION detected, using --break-system-packages"
-    fi
-
-    pip3 install $PIP_FLAGS nltk 2>&1 | grep -v "WARNING" || true
-    print_success "NLTK installed"
-fi
-
-# Check if NLTK data exists
-if [ ! -d "$NLTK_DATA_DIR/corpora/stopwords" ] || [ ! -d "$NLTK_DATA_DIR/corpora/wordnet" ]; then
-    print_warning "NLTK data not found at $NLTK_DATA_DIR. Downloading..."
-
-    python3 << 'EOF'
-import nltk
-import os
-import sys
-
-try:
-    # Use user's home directory (no sudo required)
-    nltk_data_dir = os.path.expanduser('~/nltk_data')
-
-    # Create directory if it doesn't exist
-    os.makedirs(nltk_data_dir, exist_ok=True)
-
-    # Download required NLTK data
-    print("Downloading NLTK stopwords...")
-    nltk.download('stopwords', download_dir=nltk_data_dir, quiet=False)
-
-    print("Downloading NLTK wordnet...")
-    nltk.download('wordnet', download_dir=nltk_data_dir, quiet=False)
-
-    print("Downloading NLTK punkt...")
-    nltk.download('punkt', download_dir=nltk_data_dir, quiet=False)
-
-    print("NLTK data download completed successfully!")
-    sys.exit(0)
-except Exception as e:
-    print(f"Error downloading NLTK data: {e}")
-    sys.exit(1)
-EOF
-
-    if [ $? -eq 0 ]; then
-        print_success "NLTK data downloaded successfully"
-    else
-        print_error "Failed to download NLTK data"
-        exit 1
-    fi
-else
-    print_success "NLTK data already exists at $NLTK_DATA_DIR"
-fi
-
-################################################################################
-# 3. HDFS PREPARATION
-################################################################################
-
-print_header "Step 3: HDFS Preparation"
+print_header "Step 2: HDFS Preparation"
 
 # Check if input directory exists
 print_status "Checking input directory: $HDFS_INPUT_PATH"
@@ -213,10 +142,10 @@ else
 fi
 
 ################################################################################
-# 4. HADOOP STREAMING JOB CONFIGURATION
+# 3. HADOOP STREAMING JOB CONFIGURATION
 ################################################################################
 
-print_header "Step 4: Hadoop Streaming Job Configuration"
+print_header "Step 3: Hadoop Streaming Job Configuration"
 
 print_status "Job Configuration:"
 echo "  - Input Path: $HDFS_INPUT_PATH"
@@ -227,10 +156,10 @@ echo "  - Number of Reducers: $NUM_REDUCERS"
 echo "  - Total Documents: $INPUT_FILE_COUNT"
 
 ################################################################################
-# 5. JOB EXECUTION
+# 4. JOB EXECUTION
 ################################################################################
 
-print_header "Step 5: Executing Hadoop Streaming Job"
+print_header "Step 4: Executing Hadoop Streaming Job"
 
 print_status "Starting MapReduce job..."
 echo ""
@@ -262,10 +191,10 @@ else
 fi
 
 ################################################################################
-# 6. POST-EXECUTION
+# 5. POST-EXECUTION
 ################################################################################
 
-print_header "Step 6: Results Summary"
+print_header "Step 5: Results Summary"
 
 # Check output directory
 if hadoop fs -test -d "$HDFS_OUTPUT_PATH"; then

@@ -106,11 +106,11 @@ for key, row in df_metadata.iterrows():
             print("Couldn't acquire text for " + row['Title'] + ' with ID ' + str(book_id) + '. Link: ' + row['Link'])
 
 
-    local_file = f"{row['Title']}.txt".replace(" ", "_") 
+    local_file = f"{str(key + 1).zfill(5)}.txt"
     with open(local_file, "w") as f:
         f.write(' '.join(text.split(' ')))
 
-    print(Fore.GREEN + f"[LOCAL] File {local_file} saved successfully!")
+    print(Fore.GREEN + f"[LOCAL] File {local_file} saved successfully! ({row['Title']})")
 
     # Local and HDFS paths
     hdfs_path = f"/gutenberg-input"
