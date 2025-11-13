@@ -111,7 +111,27 @@ print_success "HDFS is accessible"
 
 print_header "Step 2: NLTK Data Setup"
 
-NLTK_DATA_DIR="/root/nltk_data"
+# Use user's home directory instead of /root (no sudo required)
+NLTK_DATA_DIR="$HOME/nltk_data"
+
+# Check if NLTK is installed
+if ! python3 -c "import nltk" 2>/dev/null; then
+    print_warning "NLTK not installed. Installing..."
+
+    # Detect if we need --break-system-packages (Python 3.12+)
+    PYTHON_VERSION=$(python3 --version 2>&1 | grep -oP '\d+\.\d+' | head -1)
+    PYTHON_MAJOR=$(echo $PYTHON_VERSION | cut -d. -f1)
+    PYTHON_MINOR=$(echo $PYTHON_VERSION | cut -d. -f2)
+
+    PIP_FLAGS="--user"
+    if [ -f /etc/debian_version ] && [ "$PYTHON_MAJOR" -ge 3 ] && [ "$PYTHON_MINOR" -ge 12 ]; then
+        PIP_FLAGS="--user --break-system-packages"
+        print_status "Python $PYTHON_VERSION detected, using --break-system-packages"
+    fi
+
+    pip3 install $PIP_FLAGS nltk 2>&1 | grep -v "WARNING" || true
+    print_success "NLTK installed"
+fi
 
 # Check if NLTK data exists
 if [ ! -d "$NLTK_DATA_DIR/corpora/stopwords" ] || [ ! -d "$NLTK_DATA_DIR/corpora/wordnet" ]; then
@@ -123,7 +143,8 @@ import os
 import sys
 
 try:
-    nltk_data_dir = '/root/nltk_data'
+    # Use user's home directory (no sudo required)
+    nltk_data_dir = os.path.expanduser('~/nltk_data')
 
     # Create directory if it doesn't exist
     os.makedirs(nltk_data_dir, exist_ok=True)
