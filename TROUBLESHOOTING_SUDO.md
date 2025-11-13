@@ -1,6 +1,68 @@
-# Troubleshooting: Sudo Password Issues
+# Troubleshooting: Installation Issues
 
-## The Error You're Seeing
+---
+
+## Issue 1: "externally-managed-environment" Error (Python 3.12+)
+
+### The Error:
+
+```
+error: externally-managed-environment
+
+× This environment is externally managed
+╰─> To install Python packages system-wide, try apt install
+    python3-xyz, where xyz is the package you are trying to
+    install.
+```
+
+### What This Means:
+
+You're running **Python 3.12+** on **Ubuntu/Debian**, which implements **PEP 668** to prevent pip from conflicting with system packages.
+
+### ✅ SOLUTION: Use --break-system-packages Flag
+
+#### Quick Fix:
+
+```bash
+# Use the Ubuntu-specific installation script
+./install_all_dependencies_ubuntu.sh
+```
+
+OR use the auto-detecting script:
+
+```bash
+# Automatically detects Python 3.12 and adds correct flags
+./install_all_dependencies.sh
+```
+
+#### Manual Installation:
+
+```bash
+# Add --break-system-packages to all pip commands
+pip3 install --user --break-system-packages pandas
+pip3 install --user --break-system-packages nltk
+```
+
+#### Comprehensive Guide:
+
+For full details on this error and alternative solutions (apt packages, pipx, virtual environments), see:
+
+**📖 [UBUNTU_PYTHON312_FIX.md](UBUNTU_PYTHON312_FIX.md)** - Complete guide with 4 solution options
+
+### Quick Summary of Solutions:
+
+| Solution | Command | Requires Sudo? | Recommended? |
+|----------|---------|----------------|--------------|
+| **--break-system-packages** | `./install_all_dependencies_ubuntu.sh` | ❌ No | ✅ **Best for Hadoop** |
+| **apt packages** | `sudo apt install python3-nltk python3-pandas` | ✅ Yes | ✅ Best for production |
+| **pipx** | `pipx install pandas` | ✅ Yes (install pipx) | ❌ Not for MapReduce |
+| **Virtual env** | `python3 -m venv ~/env` | ❌ No | ❌ Too complex for Hadoop |
+
+---
+
+## Issue 2: Sudo Password Prompt Over SSH
+
+### The Error You're Seeing
 
 ```
 [INFO] Downloading NLTK data...

@@ -1,19 +1,24 @@
 #!/bin/bash
 
 ################################################################################
-# Complete Dependency Installation (User-Space, No Sudo Required)
+# Complete Dependency Installation for Ubuntu/Debian (Python 3.12+)
 #
-# This script installs ALL Python dependencies for the Inverted Index project:
-#   - On MASTER: All libraries (NLTK, pandas, requests, etc.)
-#   - On WORKERS: Only NLTK (required for MapReduce tasks)
+# This script handles the "externally-managed-environment" error in Python 3.12+
+# by using the --break-system-packages flag.
+#
+# ⚠️ WARNING: Using --break-system-packages can potentially conflict with
+# system packages. This is acceptable for Hadoop worker nodes but use caution.
+#
+# Alternative: Use system packages (sudo apt install python3-pandas etc.)
+# See UBUNTU_PYTHON312_FIX.md for other options.
 #
 # Prerequisites:
+#   - Ubuntu/Debian with Python 3.12+
 #   - SSH access to all workers
-#   - Python 3 installed on all nodes
-#   - pip3 available on all nodes
-#   - NO sudo required!
+#   - pip3 available
+#   - NO sudo required for pip installs!
 #
-# Usage: ./install_all_dependencies.sh
+# Usage: ./install_all_dependencies_ubuntu.sh
 ################################################################################
 
 set -e
@@ -23,6 +28,7 @@ RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
+MAGENTA='\033[0;35m'
 NC='\033[0m'
 
 # Configuration
@@ -30,18 +36,8 @@ CURRENT_USER=$(whoami)
 USER_HOME="$HOME"
 NLTK_DATA_DIR="$USER_HOME/nltk_data"
 
-# Detect Python version and OS to determine if --break-system-packages is needed
-PYTHON_VERSION=$(python3 --version 2>&1 | grep -oP '\d+\.\d+' | head -1)
-PYTHON_MAJOR=$(echo $PYTHON_VERSION | cut -d. -f1)
-PYTHON_MINOR=$(echo $PYTHON_VERSION | cut -d. -f2)
-
-# Check if we need --break-system-packages (Python 3.12+ on Debian/Ubuntu)
-PIP_FLAGS="--user"
-if [ -f /etc/debian_version ] && [ "$PYTHON_MAJOR" -ge 3 ] && [ "$PYTHON_MINOR" -ge 12 ]; then
-    print_warning "Detected Python $PYTHON_VERSION on Debian/Ubuntu"
-    print_warning "Will use --break-system-packages flag (PEP 668 requirement)"
-    PIP_FLAGS="--user --break-system-packages"
-fi
+# PIP flags for Python 3.12+ externally-managed environment
+PIP_FLAGS="--user --break-system-packages"
 
 # ⚠️ EDIT THIS: Add your worker node hostnames
 WORKER_NODES=(
@@ -75,43 +71,41 @@ print_warning() {
 }
 
 ################################################################################
-# Configuration
+# Warning and Confirmation
 ################################################################################
 
-print_header "Complete Dependency Installation"
+print_header "Ubuntu/Debian Python 3.12+ Installation"
+
+print_warning "This script uses --break-system-packages flag"
+echo ""
+echo -e "${MAGENTA}About --break-system-packages:${NC}"
+echo "  • Bypasses Python 3.12's PEP 668 protection"
+echo "  • Allows pip to install packages in user space"
+echo "  • Generally safe for Hadoop worker nodes"
+echo "  • May conflict with system Python packages (rare)"
+echo ""
+echo -e "${MAGENTA}Alternative (if you have sudo):${NC}"
+echo "  sudo apt install python3-pandas python3-nltk python3-numpy"
+echo "  (See UBUNTU_PYTHON312_FIX.md for details)"
+echo ""
 
 print_status "Current user: $CURRENT_USER"
-print_status "Python version: $PYTHON_VERSION"
-print_status "Installation type: User-space (no sudo required)"
-print_status "Pip flags: $PIP_FLAGS"
-print_status "NLTK data location: $NLTK_DATA_DIR"
-if echo "$PIP_FLAGS" | grep -q "break-system-packages"; then
-    print_warning "Using --break-system-packages (Python 3.12+ on Debian/Ubuntu)"
-    print_warning "See UBUNTU_PYTHON312_FIX.md for alternative approaches"
-fi
-print_status ""
-print_status "Dependencies to install:"
-echo "  On MASTER node:"
-echo "    • nltk (text processing for MapReduce)"
-echo "    • pandas (data processing for download script)"
-echo "    • numpy (numerical operations)"
-echo "    • requests (HTTP requests)"
-echo "    • beautifulsoup4 (HTML parsing)"
-echo "    • gutenberg (Project Gutenberg API)"
-echo "    • colorama (colored terminal output)"
-echo ""
-echo "  On WORKER nodes:"
-echo "    • nltk (required for mapper/reducer execution)"
-echo ""
-print_status "Worker nodes (${#WORKER_NODES[@]}):"
+print_status "Python version: $(python3 --version 2>&1 || echo 'Not found')"
+print_status "pip flags: $PIP_FLAGS"
+print_status "Worker nodes: ${#WORKER_NODES[@]}"
 for node in "${WORKER_NODES[@]}"; do
     echo "  - $node"
 done
 
 echo ""
-read -p "Continue with installation? (yes/no): " confirm
+read -p "Continue with installation using --break-system-packages? (yes/no): " confirm
 if [ "$confirm" != "yes" ]; then
     print_warning "Installation cancelled"
+    echo ""
+    print_status "Alternative options:"
+    echo "  1. Use system packages: See UBUNTU_PYTHON312_FIX.md"
+    echo "  2. Use pipx: See UBUNTU_PYTHON312_FIX.md"
+    echo "  3. Use virtual env: See UBUNTU_PYTHON312_FIX.md"
     exit 0
 fi
 
@@ -137,7 +131,6 @@ if [ ${#FAILED_NODES[@]} -gt 0 ]; then
     for node in "${FAILED_NODES[@]}"; do
         echo "  - $node"
     done
-    print_warning "Please set up passwordless SSH first"
     exit 1
 fi
 
@@ -151,50 +144,51 @@ print_header "Installing Dependencies on Master Node"
 
 # Check Python 3
 if ! command -v python3 &> /dev/null; then
-    print_error "Python 3 not found. Please ask admin to install Python 3."
+    print_error "Python 3 not found"
     exit 1
 fi
-print_success "Python 3: $(python3 --version)"
+PYTHON_VERSION=$(python3 --version 2>&1)
+print_success "Python: $PYTHON_VERSION"
 
 # Check pip3
 if ! command -v pip3 &> /dev/null; then
-    print_error "pip3 not found. Please ask admin to install python3-pip."
+    print_error "pip3 not found. Install with: sudo apt install python3-pip"
     exit 1
 fi
 print_success "pip3: $(pip3 --version | head -1)"
 
-# Upgrade pip in user space
+# Upgrade pip (with break-system-packages flag)
 print_status "Upgrading pip..."
 pip3 install $PIP_FLAGS --upgrade pip --quiet 2>&1 | grep -v "WARNING" || true
 
 # Install all libraries from requirements.txt
-print_status "Installing Python libraries from requirements.txt..."
+print_status "Installing Python libraries..."
 if [ -f "requirements.txt" ]; then
-    pip3 install $PIP_FLAGS -r requirements.txt 2>&1 | grep -v "WARNING" || true
+    print_status "Installing from requirements.txt..."
+
+    # Read requirements and install each with proper flags
+    while IFS= read -r line; do
+        # Skip comments and empty lines
+        [[ "$line" =~ ^#.*$ ]] && continue
+        [[ -z "$line" ]] && continue
+
+        # Extract package name (before >= or ==)
+        package=$(echo "$line" | cut -d'>' -f1 | cut -d'=' -f1 | cut -d'<' -f1 | tr -d ' ')
+
+        print_status "Installing $package..."
+        pip3 install $PIP_FLAGS "$line" --quiet 2>&1 | grep -v "WARNING" || true
+    done < requirements.txt
+
     print_success "All libraries installed from requirements.txt"
 else
     print_warning "requirements.txt not found, installing individually..."
 
-    print_status "Installing nltk..."
-    pip3 install $PIP_FLAGS nltk
+    declare -a packages=("nltk" "pandas" "numpy" "requests" "beautifulsoup4" "gutenberg" "colorama")
 
-    print_status "Installing pandas..."
-    pip3 install $PIP_FLAGS pandas
-
-    print_status "Installing numpy..."
-    pip3 install $PIP_FLAGS numpy
-
-    print_status "Installing requests..."
-    pip3 install $PIP_FLAGS requests
-
-    print_status "Installing beautifulsoup4..."
-    pip3 install $PIP_FLAGS beautifulsoup4
-
-    print_status "Installing gutenberg..."
-    pip3 install $PIP_FLAGS gutenberg
-
-    print_status "Installing colorama..."
-    pip3 install $PIP_FLAGS colorama
+    for package in "${packages[@]}"; do
+        print_status "Installing $package..."
+        pip3 install $PIP_FLAGS "$package" --quiet 2>&1 | grep -v "WARNING" || true
+    done
 
     print_success "All libraries installed"
 fi
@@ -227,7 +221,7 @@ print_success "Master node setup complete"
 
 print_header "Installing Dependencies on Worker Nodes"
 
-print_warning "Workers only need NLTK (not pandas, requests, etc.)"
+print_status "Workers only need NLTK (not pandas, requests, etc.)"
 print_status "Installing NLTK on all worker nodes..."
 
 INSTALL_SCRIPT=$(cat << 'EOFSCRIPT'
@@ -237,30 +231,20 @@ set -e
 NODE_NAME=$(hostname)
 USER_HOME="$HOME"
 NLTK_DATA_DIR="$USER_HOME/nltk_data"
+PIP_FLAGS="--user --break-system-packages"
 
-# Detect if we need --break-system-packages
-PYTHON_VERSION=$(python3 --version 2>&1 | grep -oP '\d+\.\d+' | head -1)
-PYTHON_MAJOR=$(echo $PYTHON_VERSION | cut -d. -f1)
-PYTHON_MINOR=$(echo $PYTHON_VERSION | cut -d. -f2)
-
-PIP_FLAGS="--user"
-if [ -f /etc/debian_version ] && [ "$PYTHON_MAJOR" -ge 3 ] && [ "$PYTHON_MINOR" -ge 12 ]; then
-    PIP_FLAGS="--user --break-system-packages"
-    echo "[INFO] Python $PYTHON_VERSION detected, using --break-system-packages"
-fi
-
-echo "[INFO] Installing on $NODE_NAME..."
+echo "[INFO] Installing on $NODE_NAME (using --break-system-packages)..."
 
 # Check Python 3
 if ! command -v python3 &> /dev/null; then
-    echo "[ERROR] Python 3 not found. Please ask admin to install."
+    echo "[ERROR] Python 3 not found"
     exit 1
 fi
-echo "[OK] Python 3: $(python3 --version)"
+echo "[OK] Python: $(python3 --version 2>&1)"
 
 # Check pip3
 if ! command -v pip3 &> /dev/null; then
-    echo "[ERROR] pip3 not found. Please ask admin to install."
+    echo "[ERROR] pip3 not found. Ask admin: sudo apt install python3-pip"
     exit 1
 fi
 
@@ -350,7 +334,7 @@ else:
     print("\n[SUCCESS] All libraries installed on master node")
 EOF
 
-# Verify NLTK data on master
+# Verify NLTK functionality on master
 python3 << 'EOF'
 from nltk.corpus import stopwords
 from nltk.stem import WordNetLemmatizer
@@ -381,7 +365,7 @@ try:
     stop_words = set(stopwords.words('english'))
     lemmatizer = WordNetLemmatizer()
 
-    print(f"[SUCCESS] {sys.argv[0] if len(sys.argv) > 0 else 'Node'} ready")
+    print(f"[SUCCESS] Node ready")
 except Exception as e:
     print(f"[ERROR] {e}")
     sys.exit(1)
@@ -419,11 +403,9 @@ echo ""
 print_status "Installation Summary:"
 echo ""
 echo "  Master Node:"
-echo "    ✓ Python 3 + pip3"
-echo "    ✓ NLTK (with data)"
-echo "    ✓ pandas, numpy"
-echo "    ✓ requests, beautifulsoup4, gutenberg"
-echo "    ✓ colorama"
+echo "    ✓ Python $(python3 --version 2>&1 | cut -d' ' -f2)"
+echo "    ✓ NLTK, pandas, numpy, requests, beautifulsoup4, gutenberg, colorama"
+echo "    ✓ Installed with: pip3 $PIP_FLAGS"
 echo ""
 echo "  Worker Nodes (${#WORKER_NODES[@]}):"
 for node in "${WORKER_NODES[@]}"; do
@@ -435,11 +417,12 @@ echo "  1. Download data:  python3 donwload_file.py"
 echo "  2. Run MapReduce:  ./run_inverted_index_mapreduce.sh 2"
 echo "  3. View results:   hdfs dfs -cat /gutenberg-output/part-* | head"
 echo ""
-print_status "All libraries installed in user space at:"
-echo "  ~/.local/lib/python3.x/site-packages/"
+print_status "Installation locations:"
+echo "  Libraries: ~/.local/lib/python3.x/site-packages/"
+echo "  NLTK data: ~/nltk_data/"
 echo ""
-print_status "NLTK data installed at:"
-echo "  ~/nltk_data/"
+print_warning "Note: Used --break-system-packages flag (Python 3.12+ requirement)"
+print_status "See UBUNTU_PYTHON312_FIX.md for alternative installation methods"
 echo ""
 
 exit 0

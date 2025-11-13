@@ -1,5 +1,25 @@
 # Python dependencies for Inverted Index MapReduce Project
-# Install with: pip3 install --user -r requirements.txt
+#
+# INSTALLATION INSTRUCTIONS:
+#
+# === For Python 3.11 and earlier (CentOS, older Ubuntu): ===
+# pip3 install --user -r requirements.txt
+#
+# === For Python 3.12+ (Ubuntu 24.04+, Debian 13+): ===
+# pip3 install --user --break-system-packages -r requirements.txt
+#
+# === Automated Installation (Recommended): ===
+# ./install_all_dependencies.sh          # Auto-detects OS and Python version
+# OR
+# ./install_all_dependencies_ubuntu.sh   # Specifically for Ubuntu/Debian
+#
+# === System Packages (Alternative, requires sudo): ===
+# sudo apt install python3-nltk python3-pandas python3-numpy python3-requests python3-bs4
+# pip3 install --user --break-system-packages gutenberg colorama
+#
+# See UBUNTU_PYTHON312_FIX.md for detailed explanations and alternatives
+#
+# -----------------------------------------------------------------------------
 
 # Text Processing (required on ALL nodes for MapReduce)
 nltk>=3.8
