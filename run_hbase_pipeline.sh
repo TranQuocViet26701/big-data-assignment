@@ -228,16 +228,17 @@ if [ "$SKIP_STAGE1" = false ]; then
     print_status "Running MapReduce (Stage 1: Inverted Index)..."
 
     # Run MapReduce with HBase output
-    hadoop jar "$HADOOP_STREAMING_JAR" \
+    hadoop \
         -D mapreduce.job.reduces="$NUM_REDUCERS" \
         -D mapreduce.job.name="HBase_Inverted_Index_${NUM_BOOKS}books" \
         -D mapreduce.map.memory.mb=2048 \
         -D mapreduce.reduce.memory.mb=2048 \
         -D total_map_tasks="$INPUT_FILE_COUNT" \
         -D mapreduce.output.fileoutputformat.outputdir="$TEMP_OUTPUT" \
+        -D hbase.mapred.outputtable=inverted_index \
+        jar "$HADOOP_STREAMING_JAR" \
         -inputformat org.apache.hadoop.mapred.TextInputFormat \
         -outputformat org.apache.hadoop.hbase.mapreduce.TableOutputFormat \
-        -D hbase.mapred.outputtable=inverted_index \
         -input "$INPUT_DIR" \
         -mapper "python3 inverted_index_mapper.py" \
         -reducer "python3 hbase_inverted_index_reducer.py" \
@@ -302,15 +303,16 @@ hadoop fs -rm -r -f "$TEMP_OUTPUT" 2>/dev/null
 print_status "Running MapReduce (Stage 2: JPII Similarity)..."
 
 # Run MapReduce with HBase output
-hadoop jar "$HADOOP_STREAMING_JAR" \
+hadoop \
     -D mapreduce.job.reduces="$NUM_REDUCERS" \
     -D mapreduce.job.name="HBase_JPII_${NUM_BOOKS}books" \
     -D mapreduce.map.memory.mb=2048 \
     -D mapreduce.reduce.memory.mb=2048 \
     -D mapreduce.output.fileoutputformat.outputdir="$TEMP_OUTPUT" \
+    -D hbase.mapred.outputtable=similarity_scores \
+    jar "$HADOOP_STREAMING_JAR" \
     -inputformat org.apache.hadoop.mapred.TextInputFormat \
     -outputformat org.apache.hadoop.hbase.mapreduce.TableOutputFormat \
-    -D hbase.mapred.outputtable=similarity_scores \
     -input "$INDEX_DIR" \
     -mapper "python3 jpii_mapper.py" \
     -reducer "python3 hbase_jpii_reducer.py" \
