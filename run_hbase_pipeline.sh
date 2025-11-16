@@ -266,9 +266,9 @@ if [ "$SKIP_STAGE1" = false ]; then
         -input "$INPUT_DIR" \
         -output "$STAGE1_OUTPUT" \
         -mapper "python3 inverted_index_mapper.py" \
-        -reducer "python3 hbase_inverted_index_reducer.py" \
+        -reducer "python3 inverted_index_reducer.py" \
         -file inverted_index_mapper.py \
-        -file hbase_inverted_index_reducer.py
+        -file inverted_index_reducer.py
 
     STAGE1A_EXIT=$?
 

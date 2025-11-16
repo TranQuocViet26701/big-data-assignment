@@ -66,30 +66,55 @@ def read_hdfs_directory(hdfs_path):
         sys.exit(1)
 
 
-def parse_line(line):
+def parse_line(line, table_name):
     """
     Parse tab-separated line into row_key, column, value.
 
-    Expected format: row_key\tcolumn_family:qualifier\tvalue
+    Supports two formats:
+    1. HBase format: row_key\tcolumn_family:qualifier\tvalue
+    2. Inverted index format: term\turl1@count1\turl2@count2\t...
+       (converted to multiple rows: term\tdocs:url1\tcount1, etc.)
 
     Args:
         line: Tab-separated line
+        table_name: HBase table name (to detect format)
 
-    Returns:
-        (row_key, column, value) tuple or None if invalid
+    Yields:
+        (row_key, column, value) tuples
     """
     parts = line.split('\t')
+
+    # Check if this is inverted index format (for inverted_index table)
+    # Format: term\turl1@count1\turl2@count2\t...
+    if table_name == 'inverted_index' and len(parts) >= 2:
+        term = parts[0]
+        url_counts = parts[1:]  # All remaining parts are url@count pairs
+
+        # Check if this looks like inverted index format (has @ separators)
+        if any('@' in uc for uc in url_counts):
+            # Parse as inverted index format
+            for url_count in url_counts:
+                if '@' in url_count:
+                    try:
+                        url, count = url_count.split('@', 1)
+                        yield term, f'docs:{url}', count
+                    except ValueError:
+                        print(f"Warning: Invalid url@count format: {url_count}", file=sys.stderr)
+                        continue
+            return
+
+    # Otherwise, parse as standard HBase format
     if len(parts) != 3:
-        print(f"Warning: Invalid line format (expected 3 fields): {line[:100]}", file=sys.stderr)
-        return None
+        print(f"Warning: Invalid line format (expected 3 fields or inverted index format): {line[:100]}", file=sys.stderr)
+        return
 
     row_key, column, value = parts
 
     if ':' not in column:
         print(f"Warning: Invalid column format (expected family:qualifier): {column}", file=sys.stderr)
-        return None
+        return
 
-    return row_key, column, value
+    yield row_key, column, value
 
 
 def import_to_hbase(hdfs_path, table_name, host='localhost', port=9090, batch_size=1000):
@@ -145,23 +170,24 @@ def import_to_hbase(hdfs_path, table_name, host='localhost', port=9090, batch_si
         for line in read_hdfs_directory(hdfs_path):
             total_lines += 1
 
-            parsed = parse_line(line)
-            if not parsed:
+            # parse_line now yields tuples (to handle inverted index expansion)
+            parsed_entries = list(parse_line(line, table_name))
+            if not parsed_entries:
                 invalid_lines += 1
                 continue
 
-            row_key, column, value = parsed
+            # Process each parsed entry (may be multiple for inverted index format)
+            for row_key, column, value in parsed_entries:
+                # Add to batch
+                # Convert column from "family:qualifier" to bytes
+                batch_data[row_key][column.encode('utf-8')] = value.encode('utf-8')
 
-            # Add to batch
-            # Convert column from "family:qualifier" to bytes
-            batch_data[row_key][column.encode('utf-8')] = value.encode('utf-8')
-
-            # Write batch if size reached
-            if len(batch_data) >= batch_size:
-                write_batch(table, batch_data)
-                total_rows += len(batch_data)
-                print(f"Progress: {total_rows} rows imported ({total_lines} lines processed)...")
-                batch_data.clear()
+                # Write batch if size reached
+                if len(batch_data) >= batch_size:
+                    write_batch(table, batch_data)
+                    total_rows += len(batch_data)
+                    print(f"Progress: {total_rows} rows imported ({total_lines} lines processed)...")
+                    batch_data.clear()
 
         # Write remaining data
         if batch_data:
