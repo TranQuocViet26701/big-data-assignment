@@ -98,7 +98,7 @@ if [ "$SKIP_INVERTED_INDEX" != true ]; then
 
     hbase shell <<EOF
 create '$TABLE_INVERTED_INDEX',
-  {NAME => 'docs', VERSIONS => 1, COMPRESSION => 'SNAPPY', BLOCKCACHE => true}
+  {NAME => 'docs', VERSIONS => 1, COMPRESSION => 'GZ', BLOCKCACHE => true}
 EOF
 
     if [ $? -eq 0 ]; then
@@ -150,8 +150,8 @@ if [ "$SKIP_SIMILARITY" != true ]; then
 
     hbase shell <<EOF
 create '$TABLE_SIMILARITY',
-  {NAME => 'score', VERSIONS => 1, COMPRESSION => 'SNAPPY', BLOCKCACHE => true},
-  {NAME => 'meta', VERSIONS => 5, COMPRESSION => 'SNAPPY', BLOCKCACHE => true}
+  {NAME => 'score', VERSIONS => 1, COMPRESSION => 'GZ', BLOCKCACHE => true},
+  {NAME => 'meta', VERSIONS => 5, COMPRESSION => 'GZ', BLOCKCACHE => true}
 EOF
 
     if [ $? -eq 0 ]; then
