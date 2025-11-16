@@ -170,6 +170,8 @@ print_success "HBase tables verified"
 # HDFS paths
 INPUT_DIR="/gutenberg-input-${NUM_BOOKS}"
 TEMP_OUTPUT="/temp-hbase-output-$$"
+STAGE1_OUTPUT="/hbase-stage1-output-${NUM_BOOKS}-${NUM_REDUCERS}"
+STAGE2_OUTPUT="/hbase-stage2-output-${NUM_BOOKS}-${NUM_REDUCERS}"
 
 # Total timer
 PIPELINE_START=$(date +%s)
@@ -207,7 +209,7 @@ fi
 ################################################################################
 
 if [ "$SKIP_STAGE1" = false ]; then
-    print_header "Step 2: Build Inverted Index (write to HBase)"
+    print_header "Step 2: Build Inverted Index (HDFS → HBase)"
 
     STAGE1_START=$(date +%s)
 
@@ -219,45 +221,56 @@ if [ "$SKIP_STAGE1" = false ]; then
         exit 1
     fi
 
-    # Clean temporary output
-    hadoop fs -rm -r -f "$TEMP_OUTPUT" 2>/dev/null
+    # Clean output directory
+    hadoop fs -rm -r -f "$STAGE1_OUTPUT" 2>/dev/null
 
     # Count input files for total_map_tasks
     INPUT_FILE_COUNT=$(hadoop fs -ls "$INPUT_DIR" 2>/dev/null | grep "^-" | wc -l | tr -d ' ')
 
-    print_status "Running MapReduce (Stage 1: Inverted Index)..."
+    print_status "Running MapReduce (Stage 1a: Build Inverted Index → HDFS)..."
 
-    # Run MapReduce with HBase output
-    hadoop \
+    # Run MapReduce with HDFS output
+    hadoop jar "$HADOOP_STREAMING_JAR" \
         -D mapreduce.job.reduces="$NUM_REDUCERS" \
-        -D mapreduce.job.name="HBase_Inverted_Index_${NUM_BOOKS}books" \
+        -D mapreduce.job.name="Inverted_Index_${NUM_BOOKS}books" \
         -D mapreduce.map.memory.mb=2048 \
         -D mapreduce.reduce.memory.mb=2048 \
         -D total_map_tasks="$INPUT_FILE_COUNT" \
-        -D mapreduce.output.fileoutputformat.outputdir="$TEMP_OUTPUT" \
-        -D hbase.mapred.outputtable=inverted_index \
-        jar "$HADOOP_STREAMING_JAR" \
-        -inputformat org.apache.hadoop.mapred.TextInputFormat \
-        -outputformat org.apache.hadoop.hbase.mapreduce.TableOutputFormat \
         -input "$INPUT_DIR" \
+        -output "$STAGE1_OUTPUT" \
         -mapper "python3 inverted_index_mapper.py" \
         -reducer "python3 hbase_inverted_index_reducer.py" \
         -file inverted_index_mapper.py \
         -file hbase_inverted_index_reducer.py
 
-    STAGE1_EXIT=$?
+    STAGE1A_EXIT=$?
 
-    # Clean temporary output
-    hadoop fs -rm -r -f "$TEMP_OUTPUT" 2>/dev/null
+    if [ $STAGE1A_EXIT -ne 0 ]; then
+        print_error "Stage 1a (MapReduce) failed"
+        exit $STAGE1A_EXIT
+    fi
+
+    print_success "MapReduce completed, output in $STAGE1_OUTPUT"
+
+    # Import to HBase
+    print_status "Running Stage 1b: Import HDFS → HBase (inverted_index table)..."
+
+    python3 import_to_hbase.py \
+        --hdfs-path "$STAGE1_OUTPUT" \
+        --table-name inverted_index \
+        --batch-size 5000
+
+    STAGE1B_EXIT=$?
 
     STAGE1_END=$(date +%s)
     STAGE1_TIME=$((STAGE1_END - STAGE1_START))
 
-    if [ $STAGE1_EXIT -eq 0 ]; then
-        print_success "Stage 1 completed in ${STAGE1_TIME}s"
+    if [ $STAGE1B_EXIT -eq 0 ]; then
+        print_success "Stage 1 completed in ${STAGE1_TIME}s (MapReduce + HBase import)"
+        print_status "HDFS output retained at: $STAGE1_OUTPUT"
     else
-        print_error "Stage 1 failed"
-        exit $STAGE1_EXIT
+        print_error "Stage 1b (HBase import) failed"
+        exit $STAGE1B_EXIT
     fi
 else
     print_status "Skipping Stage 1 (--skip-stage1 flag)"
@@ -268,71 +281,81 @@ fi
 # Step 3: Compute Similarities → HBase
 ################################################################################
 
-print_header "Step 3: Compute Similarities (write to HBase)"
+print_header "Step 3: Compute Similarities (HDFS → HBase)"
 
 STAGE2_START=$(date +%s)
 
-# We need to read from HBase inverted index
-# For now, we'll use the HDFS approach and write to HBase
-# In production, you'd implement HBase input format
+# Use inverted index from Stage 1 or fallback to standard location
+if hadoop fs -test -d "$STAGE1_OUTPUT" 2>/dev/null; then
+    INDEX_DIR="$STAGE1_OUTPUT"
+    print_status "Using inverted index from Stage 1: $INDEX_DIR"
+else
+    # Fallback to standard inverted index location
+    INDEX_DIR="/gutenberg-output-${NUM_BOOKS}-${NUM_REDUCERS}"
 
-print_warning "Stage 2 requires HBase TableInputFormat implementation"
-print_status "Alternative: Use existing HDFS inverted index as input"
+    if ! hadoop fs -test -d "$INDEX_DIR" 2>/dev/null; then
+        print_warning "HDFS inverted index not found at $INDEX_DIR"
+        print_status "Running Stage 1 with HDFS output first..."
 
-# Check if HDFS inverted index exists
-INDEX_DIR="/gutenberg-output-${NUM_BOOKS}-${NUM_REDUCERS}"
+        ./run_inverted_index_mapreduce.sh \
+            --input "$INPUT_DIR" \
+            --output "$INDEX_DIR" \
+            --reducers "$NUM_REDUCERS"
 
-if ! hadoop fs -test -d "$INDEX_DIR" 2>/dev/null; then
-    print_warning "HDFS inverted index not found at $INDEX_DIR"
-    print_status "Running Stage 1 with HDFS output first..."
-
-    ./run_inverted_index_mapreduce.sh \
-        --input "$INPUT_DIR" \
-        --output "$INDEX_DIR" \
-        --reducers "$NUM_REDUCERS"
-
-    if [ $? -ne 0 ]; then
-        print_error "Failed to create HDFS inverted index"
-        exit 1
+        if [ $? -ne 0 ]; then
+            print_error "Failed to create HDFS inverted index"
+            exit 1
+        fi
     fi
 fi
 
-# Clean temporary output
-hadoop fs -rm -r -f "$TEMP_OUTPUT" 2>/dev/null
+# Clean output directory
+hadoop fs -rm -r -f "$STAGE2_OUTPUT" 2>/dev/null
 
-print_status "Running MapReduce (Stage 2: JPII Similarity)..."
+print_status "Running MapReduce (Stage 2a: JPII Similarity → HDFS)..."
 
-# Run MapReduce with HBase output
-hadoop \
+# Run MapReduce with HDFS output
+hadoop jar "$HADOOP_STREAMING_JAR" \
     -D mapreduce.job.reduces="$NUM_REDUCERS" \
-    -D mapreduce.job.name="HBase_JPII_${NUM_BOOKS}books" \
+    -D mapreduce.job.name="JPII_Similarity_${NUM_BOOKS}books" \
     -D mapreduce.map.memory.mb=2048 \
     -D mapreduce.reduce.memory.mb=2048 \
-    -D mapreduce.output.fileoutputformat.outputdir="$TEMP_OUTPUT" \
-    -D hbase.mapred.outputtable=similarity_scores \
-    jar "$HADOOP_STREAMING_JAR" \
-    -inputformat org.apache.hadoop.mapred.TextInputFormat \
-    -outputformat org.apache.hadoop.hbase.mapreduce.TableOutputFormat \
     -input "$INDEX_DIR" \
+    -output "$STAGE2_OUTPUT" \
     -mapper "python3 jpii_mapper.py" \
     -reducer "python3 hbase_jpii_reducer.py" \
     -file jpii_mapper.py \
     -file hbase_jpii_reducer.py \
     -cmdenv q_from_user="$QUERY_TEXT"
 
-STAGE2_EXIT=$?
+STAGE2A_EXIT=$?
 
-# Clean temporary output
-hadoop fs -rm -r -f "$TEMP_OUTPUT" 2>/dev/null
+if [ $STAGE2A_EXIT -ne 0 ]; then
+    print_error "Stage 2a (MapReduce) failed"
+    exit $STAGE2A_EXIT
+fi
+
+print_success "MapReduce completed, output in $STAGE2_OUTPUT"
+
+# Import to HBase
+print_status "Running Stage 2b: Import HDFS → HBase (similarity_scores table)..."
+
+python3 import_to_hbase.py \
+    --hdfs-path "$STAGE2_OUTPUT" \
+    --table-name similarity_scores \
+    --batch-size 5000
+
+STAGE2B_EXIT=$?
 
 STAGE2_END=$(date +%s)
 STAGE2_TIME=$((STAGE2_END - STAGE2_START))
 
-if [ $STAGE2_EXIT -eq 0 ]; then
-    print_success "Stage 2 completed in ${STAGE2_TIME}s"
+if [ $STAGE2B_EXIT -eq 0 ]; then
+    print_success "Stage 2 completed in ${STAGE2_TIME}s (MapReduce + HBase import)"
+    print_status "HDFS output retained at: $STAGE2_OUTPUT"
 else
-    print_error "Stage 2 failed"
-    exit $STAGE2_EXIT
+    print_error "Stage 2b (HBase import) failed"
+    exit $STAGE2B_EXIT
 fi
 
 ################################################################################
