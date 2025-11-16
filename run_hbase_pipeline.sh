@@ -204,6 +204,33 @@ else
     print_status "Skipping download (--skip-download flag)"
 fi
 
+# Verify HDFS directory and files
+print_status "Verifying HDFS directory and files..."
+
+# Check directory exists
+if ! hadoop fs -test -d "$INPUT_DIR" 2>/dev/null; then
+    print_error "HDFS directory $INPUT_DIR does not exist or is not a directory"
+    print_error "Download may have failed silently"
+    exit 1
+fi
+
+# Count files in directory
+FILE_COUNT=$(hadoop fs -ls "$INPUT_DIR" 2>/dev/null | grep "^-" | wc -l | tr -d ' ')
+
+if [ "$FILE_COUNT" -eq 0 ]; then
+    print_error "No files found in $INPUT_DIR"
+    print_error "Expected $NUM_BOOKS files but found 0"
+    print_error "Please check download logs and HDFS connectivity"
+    exit 1
+fi
+
+if [ "$FILE_COUNT" -lt "$NUM_BOOKS" ]; then
+    print_warning "Expected $NUM_BOOKS files but found only $FILE_COUNT in $INPUT_DIR"
+    print_warning "Some downloads may have failed"
+else
+    print_success "Verified $FILE_COUNT files in $INPUT_DIR"
+fi
+
 ################################################################################
 # Step 2: Build Inverted Index → HBase
 ################################################################################

@@ -123,6 +123,32 @@ else:
 print(Fore.CYAN + f"[INFO] Target HDFS directory: {args.hdfs_dir}")
 print(Fore.CYAN + "=" * 70)
 
+# Create HDFS directory before uploading files
+print(Fore.CYAN + f"[HDFS] Creating HDFS directory: {args.hdfs_dir}")
+mkdir_cmd = ['hdfs', 'dfs', '-mkdir', '-p', args.hdfs_dir]
+mkdir_result = subprocess.run(mkdir_cmd, capture_output=True, text=True)
+
+if mkdir_result.returncode == 0:
+    print(Fore.GREEN + f"[HDFS] Directory {args.hdfs_dir} created successfully")
+elif 'File exists' in mkdir_result.stderr:
+    print(Fore.YELLOW + f"[HDFS] Directory {args.hdfs_dir} already exists")
+else:
+    print(Fore.RED + f"[HDFS] Failed to create directory {args.hdfs_dir}")
+    print(Fore.RED + f"[HDFS] Error: {mkdir_result.stderr}")
+    sys.exit(1)
+
+# Verify directory exists and is actually a directory
+verify_cmd = ['hdfs', 'dfs', '-test', '-d', args.hdfs_dir]
+verify_result = subprocess.run(verify_cmd, capture_output=True)
+
+if verify_result.returncode != 0:
+    print(Fore.RED + f"[HDFS] Path {args.hdfs_dir} exists but is not a directory!")
+    print(Fore.RED + f"[HDFS] Please remove it manually: hdfs dfs -rm {args.hdfs_dir}")
+    sys.exit(1)
+
+print(Fore.GREEN + f"[HDFS] Directory {args.hdfs_dir} verified as valid directory")
+print(Fore.CYAN + "=" * 70)
+
 data = {'Author': None, 'Title': None, 'Link': None, 'ID': None, 'Bookshelf': None, 'Text': None}
 
 rm_files = []
@@ -190,13 +216,19 @@ for key, row in df_metadata.iterrows():
     # Run the command
     result = subprocess.run(cmd, capture_output=True, text=True)
 
-    # Check result
+    # Check result - exit on failure to prevent cascading errors
     if result.returncode == 0:
         print(Fore.GREEN + f"[HDFS] File {local_file} successfully uploaded to {args.hdfs_dir}")
+        rm_files.append(local_file)
     else:
-        print(Fore.RED + f"[HDFS] Error uploading file {local_file}: {result.stderr}")
-
-    rm_files.append(local_file)
+        print(Fore.RED + f"[HDFS] FATAL ERROR: Failed to upload {local_file} to HDFS")
+        print(Fore.RED + f"[HDFS] Error: {result.stderr}")
+        print(Fore.RED + f"[HDFS] Command: {' '.join(cmd)}")
+        print(Fore.YELLOW + f"[CLEANUP] Removing local file: {local_file}")
+        os.remove(local_file)
+        print(Fore.RED + "\nAborting upload process due to HDFS error.")
+        print(Fore.YELLOW + "Please check HDFS connectivity and permissions.")
+        sys.exit(1)
     print(Fore.LIGHTBLUE_EX + "===============================")
     
 for rm_file in rm_files:
