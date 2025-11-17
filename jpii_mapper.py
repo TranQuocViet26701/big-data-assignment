@@ -53,12 +53,22 @@ def main(separator='\t'):
 
         urlq, wq = 'query.txt', len(query_words)
         for element in elements:
-            url, w = element.split('@')
+            # Validate element format
+            if '@' not in element:
+                continue
+
+            try:
+                url, w = element.split('@')
+                w = int(w)
+            except (ValueError, IndexError) as e:
+                # Skip malformed elements
+                continue
+
             if url != urlq:
-                if int(w) > int(wq):
-                    print("{}-{}@{}@{}\t{}".format(url, urlq, int(w), int(wq), 1))
+                if w > wq:
+                    print("{}-{}@{}@{}\t{}".format(url, urlq, w, wq, 1))
                 else:
-                    print("{}-{}@{}@{}\t{}".format(urlq, url, int(wq), int(w), 1))
+                    print("{}-{}@{}@{}\t{}".format(urlq, url, wq, w, 1))
 
 if __name__ == "__main__":
     main()

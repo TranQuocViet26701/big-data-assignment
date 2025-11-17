@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import os
 import sys
+import time
 import argparse
 import subprocess
 from colorama import init, Fore, Style
@@ -200,8 +201,13 @@ for key, row in df_metadata.iterrows():
             text = ' '.join(text.split())
             text = clean_text(str(text))
         except:
-            print("Couldn't acquire text for " + row['Title'] + ' with ID ' + str(book_id) + '. Link: ' + row['Link'])
+            print(Fore.RED + f"Couldn't acquire text for {row['Title']} with ID {book_id}. Link: {row['Link']}")
 
+    # Skip this book if download failed
+    if not isinstance(text, str) or text is np.nan or len(text.strip()) == 0:
+        print(Fore.YELLOW + f"[SKIP] Skipping {row['Title']} - failed to download valid text")
+        print(Fore.LIGHTBLUE_EX + "===============================")
+        continue
 
     local_file = f"{str(key + 1).zfill(5)}.txt"
     with open(local_file, "w") as f:
@@ -209,26 +215,37 @@ for key, row in df_metadata.iterrows():
 
     print(Fore.GREEN + f"[LOCAL] File {local_file} saved successfully! ({row['Title']})")
 
-    # Construct the command
+    # Upload to HDFS with retry logic
     print(Fore.GREEN + f"[LOCAL] Uploading {local_file} to HDFS path {args.hdfs_dir}...")
     cmd = ['hdfs', 'dfs', '-put', '-f', local_file, args.hdfs_dir]
 
-    # Run the command
-    result = subprocess.run(cmd, capture_output=True, text=True)
+    # Retry mechanism with exponential backoff
+    max_retries = 3
+    upload_success = False
 
-    # Check result - exit on failure to prevent cascading errors
-    if result.returncode == 0:
-        print(Fore.GREEN + f"[HDFS] File {local_file} successfully uploaded to {args.hdfs_dir}")
-        rm_files.append(local_file)
-    else:
-        print(Fore.RED + f"[HDFS] FATAL ERROR: Failed to upload {local_file} to HDFS")
-        print(Fore.RED + f"[HDFS] Error: {result.stderr}")
-        print(Fore.RED + f"[HDFS] Command: {' '.join(cmd)}")
-        print(Fore.YELLOW + f"[CLEANUP] Removing local file: {local_file}")
-        os.remove(local_file)
-        print(Fore.RED + "\nAborting upload process due to HDFS error.")
-        print(Fore.YELLOW + "Please check HDFS connectivity and permissions.")
-        sys.exit(1)
+    for attempt in range(1, max_retries + 1):
+        result = subprocess.run(cmd, capture_output=True, text=True)
+
+        if result.returncode == 0:
+            print(Fore.GREEN + f"[HDFS] File {local_file} successfully uploaded to {args.hdfs_dir}")
+            rm_files.append(local_file)
+            upload_success = True
+            break
+        else:
+            if attempt < max_retries:
+                wait_time = 2 ** attempt  # Exponential backoff: 2, 4, 8 seconds
+                print(Fore.YELLOW + f"[HDFS] Upload attempt {attempt} failed, retrying in {wait_time}s...")
+                print(Fore.YELLOW + f"[HDFS] Error: {result.stderr.strip()}")
+                time.sleep(wait_time)
+            else:
+                print(Fore.RED + f"[HDFS] FATAL ERROR: Failed to upload {local_file} after {max_retries} attempts")
+                print(Fore.RED + f"[HDFS] Final error: {result.stderr}")
+                print(Fore.RED + f"[HDFS] Command: {' '.join(cmd)}")
+                print(Fore.YELLOW + f"[CLEANUP] Removing local file: {local_file}")
+                os.remove(local_file)
+                print(Fore.RED + "\nAborting upload process due to persistent HDFS error.")
+                print(Fore.YELLOW + "Please check HDFS connectivity and permissions.")
+                sys.exit(1)
     print(Fore.LIGHTBLUE_EX + "===============================")
     
 for rm_file in rm_files:

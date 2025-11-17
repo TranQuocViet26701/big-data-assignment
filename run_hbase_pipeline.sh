@@ -279,6 +279,19 @@ if [ "$SKIP_STAGE1" = false ]; then
 
     print_success "MapReduce completed, output in $STAGE1_OUTPUT"
 
+    # Verify MapReduce produced output files
+    print_status "Verifying MapReduce output..."
+    PART_FILE_COUNT=$(hadoop fs -ls "$STAGE1_OUTPUT" 2>/dev/null | grep "part-" | wc -l | tr -d ' ')
+
+    if [ "$PART_FILE_COUNT" -eq 0 ]; then
+        print_error "No part files found in $STAGE1_OUTPUT"
+        print_error "MapReduce job may have produced no output"
+        print_error "Check if input data contains valid terms"
+        exit 1
+    fi
+
+    print_success "Verified $PART_FILE_COUNT part files in output directory"
+
     # Import to HBase
     print_status "Running Stage 1b: Import HDFS → HBase (inverted_index table)..."
 
@@ -363,6 +376,18 @@ if [ $STAGE2A_EXIT -ne 0 ]; then
 fi
 
 print_success "MapReduce completed, output in $STAGE2_OUTPUT"
+
+# Verify MapReduce produced output files
+print_status "Verifying MapReduce output..."
+PART_FILE_COUNT=$(hadoop fs -ls "$STAGE2_OUTPUT" 2>/dev/null | grep "part-" | wc -l | tr -d ' ')
+
+if [ "$PART_FILE_COUNT" -eq 0 ]; then
+    print_warning "No part files found in $STAGE2_OUTPUT"
+    print_warning "This may occur if query had no matching terms or all terms were too common"
+    print_warning "Similarity scores table will be empty for this query"
+fi
+
+print_success "Found $PART_FILE_COUNT part files in output directory"
 
 # Import to HBase
 print_status "Running Stage 2b: Import HDFS → HBase (similarity_scores table)..."

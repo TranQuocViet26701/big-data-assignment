@@ -55,9 +55,14 @@ def main(separator='\t'):
     # Get query text from environment
     query_text = os.getenv('q_from_user', 'unknown_query')
     query_hash = get_query_hash(query_text)
-    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+    # Escape tabs in query text to prevent breaking TSV format
+    query_text_escaped = query_text.replace('\t', ' ').replace('\n', ' ').replace('\r', ' ')
 
     for current_word, group in groupby(data, itemgetter(0)):
+        # Generate timestamp per document for accurate timing
+        timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
         try:
             # Sum shared terms (each "1" represents one shared term)
             total_count = sum(int(count) for current_word, count in group)
@@ -95,7 +100,7 @@ def main(separator='\t'):
             print(f"{row_key}\tscore:shared_terms\t{total_count}")
 
             # Metadata
-            print(f"{row_key}\tmeta:query_text\t{query_text}")
+            print(f"{row_key}\tmeta:query_text\t{query_text_escaped}")
             print(f"{row_key}\tmeta:timestamp\t{timestamp}")
 
         except ValueError as e:

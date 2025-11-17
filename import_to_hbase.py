@@ -182,11 +182,15 @@ def import_to_hbase(hdfs_path, table_name, host='localhost', port=9090, batch_si
                 # Convert column from "family:qualifier" to bytes
                 batch_data[row_key][column.encode('utf-8')] = value.encode('utf-8')
 
-                # Write batch if size reached
+                # Write batch if size reached (count unique rows, not columns)
+                # Note: For inverted index, one input line can expand to many rows
+                # but batch_size limits unique row keys to control memory
                 if len(batch_data) >= batch_size:
+                    # Count total columns for better progress reporting
+                    total_columns = sum(len(cols) for cols in batch_data.values())
                     write_batch(table, batch_data)
                     total_rows += len(batch_data)
-                    print(f"Progress: {total_rows} rows imported ({total_lines} lines processed)...")
+                    print(f"Progress: {total_rows} rows ({total_columns} cells) imported from {total_lines} lines...")
                     batch_data.clear()
 
         # Write remaining data
