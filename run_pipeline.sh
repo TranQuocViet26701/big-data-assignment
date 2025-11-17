@@ -247,11 +247,11 @@ else
 fi
 
 # Remove output directory if it exists
-if hadoop fs -test -d "$HDFS_OUTPUT_PATH"; then
-    print_warning "Output directory already exists. Removing: $HDFS_OUTPUT_PATH"
-    hadoop fs -rm -r "$HDFS_OUTPUT_PATH"
-    print_success "Output directory removed"
-fi
+# if hadoop fs -test -d "$HDFS_OUTPUT_PATH"; then
+    # print_warning "Output directory already exists. Removing: $HDFS_OUTPUT_PATH"
+    # hadoop fs -rm -r "$HDFS_OUTPUT_PATH"
+    # print_success "Output directory removed"
+# fi
 
 ################################################################################
 # Step 3: Download and Upload Books
@@ -310,19 +310,50 @@ fi
 # Step 4: Run MapReduce Job
 ################################################################################
 
-print_header "Step 4: Running MapReduce Job"
+# print_header "Step 4: Running MapReduce Job"
+# hdfs dfs -rm $HDFS_INPUT_PATH/query.txt
+# print_status "Starting Hadoop Streaming MapReduce job..."
+# print_status "Input: $HDFS_INPUT_PATH"
+# print_status "Output: $HDFS_OUTPUT_PATH"
+# print_status "Reducers: $NUM_REDUCERS"
+# echo ""
 
+# MAPREDUCE_START=$(date +%s)
+
+# ./run_inverted_index_mapreduce.sh \
+    # --input "$HDFS_INPUT_PATH" \
+    # --output "$HDFS_OUTPUT_PATH" \
+    # --reducers "$NUM_REDUCERS"
+
+# MAPREDUCE_EXIT=$?
+# MAPREDUCE_END=$(date +%s)
+# MAPREDUCE_DURATION=$((MAPREDUCE_END - MAPREDUCE_START))
+
+# if [ $MAPREDUCE_EXIT -eq 0 ]; then
+    # print_success "MapReduce job completed in ${MAPREDUCE_DURATION}s"
+# else
+    # print_error "MapReduce job failed with exit code: $MAPREDUCE_EXIT"
+    # exit $MAPREDUCE_EXIT
+# fi
+################################################################################
+# Step 5: Run Jaccard MapReduce Job
+################################################################################
+# Generate HDFS directory names based on book count
+HDFS_JACCARD_INPUT_PATH="/gutenberg-output-${NUM_BOOKS}"
+HDFS_JACCARD_OUTPUT_PATH="/jaccard-output-${NUM_BOOKS}"
+
+print_header "Step 5: Running Jaccard MapReduce Job"
 print_status "Starting Hadoop Streaming MapReduce job..."
-print_status "Input: $HDFS_INPUT_PATH"
-print_status "Output: $HDFS_OUTPUT_PATH"
+print_status "Input: $HDFS_JACCARD_INPUT_PATH"
+print_status "Output: $HDFS_JACCARD_OUTPUT_PATH"
 print_status "Reducers: $NUM_REDUCERS"
 echo ""
 
 MAPREDUCE_START=$(date +%s)
 
-./run_inverted_index_mapreduce.sh \
-    --input "$HDFS_INPUT_PATH" \
-    --output "$HDFS_OUTPUT_PATH" \
+./run_jpii.sh \
+    --input "$HDFS_JACCARD_INPUT_PATH" \
+    --output "$HDFS_JACCARD_OUTPUT_PATH" \
     --reducers "$NUM_REDUCERS"
 
 MAPREDUCE_EXIT=$?
@@ -335,7 +366,10 @@ else
     print_error "MapReduce job failed with exit code: $MAPREDUCE_EXIT"
     exit $MAPREDUCE_EXIT
 fi
-
+#Download output jaccard data
+mkdir jaccard_local_output
+hdfs dfs -get $HDFS_JACCARD_OUTPUT_PATH/* jaccard_local_output/ 
+python3 ranking_search.py jaccard_local_output
 ################################################################################
 # Step 5: Results Summary
 ################################################################################
