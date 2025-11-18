@@ -64,7 +64,7 @@ def load_and_process_files(input_folder):
                     jaccard = float(parts[4])
                     
                     # Layer 1 Filter (Custom Logic: Intersection must be >= QueryCount/2)
-                    if intersection < query_count/2:
+                    if intersection < query_count/3:
                         continue
                         
                     # Calculate Overlap and F1 Score for Layer 3 Tie-breakers
@@ -158,4 +158,5 @@ if __name__ == "__main__":
     top_results = rank_candidates(candidate_list)
     
     # 3. Print results
+
     print_results(top_results)
