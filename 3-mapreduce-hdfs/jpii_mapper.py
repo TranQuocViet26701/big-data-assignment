@@ -41,8 +41,22 @@ def main(separator='\t'):
     # get URL of query
     # file_url = os.getenv('mapreduce_map_input_file')
     # file_url = file_url if file_url else "random_filename"
-    # get content of query from hadoop environment
-    raw_query = os.getenv('q_from_user')
+
+    # Get query content - try file first (distributed via -files), then environment variable
+    raw_query = None
+
+    # Try reading from distributed file first (avoids command-line length limits)
+    if os.path.exists('query_temp.txt'):
+        try:
+            with open('query_temp.txt', 'r') as f:
+                raw_query = f.read().strip()
+        except Exception as e:
+            print(f"[WARN] Failed to read query file: {e}", file=sys.stderr)
+
+    # Fall back to environment variable for backward compatibility
+    if not raw_query:
+        raw_query = os.getenv('q_from_user')
+
     #print("[DEBUG] raw_query =", raw_query, file=sys.stderr)
 
     query_words = set(transform(raw_query if raw_query else '').split())
