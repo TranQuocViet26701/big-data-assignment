@@ -53,7 +53,8 @@ def main(separator='\t'):
             # intersection size = total_count
             match_count = total_count
             sim = match_count / (query_len + doc_len - match_count)
-            print("{}{}{}{}{}{}{}".format(url_ij,separator,match_count,separator,query_len,separator,sim))
+            print("{}{}{}{}{}{}{}{}{}".format(url_ij,separator,match_count,separator,
+                                              query_len,separator,doc_len,separator,sim))
         except ValueError:
             pass
 

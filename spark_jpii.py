@@ -95,15 +95,17 @@ def reducer_jaccard(pair_key, counts, query_url):
     # xác định đâu là query, đâu là document
     if urlA == query_url:
         query_len = wA
+        doc_len   = wB
     elif urlB == query_url:
         query_len = wB
+        doc_len   = wA
     else:
         # không có query → bỏ luôn
         return None
 
     match_count = total
 
-    return f"{pair}\t{match_count}\t{query_len}\t{sim}"
+    return f"{pair}\t{match_count}\t{query_len}\t{doc_len}\t{sim}"
 
 # ============================
 # --------------------------------------------------
@@ -121,7 +123,7 @@ if __name__ == "__main__":
     conf = SparkConf().setAppName("Spark-JPII")
     sc = SparkContext(conf=conf)
 
-    rdd = sc.textFile(inverted_index_output)
+    rdd = sc.textFile(inverted_index_output).cache()
 
     # ---- LOAD QUERY FILE ----
     with open(query_file_path, "r") as f:
