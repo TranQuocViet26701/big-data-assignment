@@ -1,4 +1,5 @@
 import sys
+import os
 from collections import namedtuple
 
 # Constants
@@ -30,7 +31,7 @@ def calculate_f1_score(intersection, query_count, ebook_count):
     # F1 = 2 * (Precision * Recall) / (Precision + Recall)
     return 2 * (precision * recall) / (precision + recall)
 
-def read_input_from_streaming():
+def read_input_from_streaming(options):
     """Reads lines from STDIN (the input to the Reducer) and processes them."""
     all_candidates = []
     
@@ -43,10 +44,10 @@ def read_input_from_streaming():
                 continue
 
             # Data Extraction
-            if options is "query":
+            if options == "query":
                 pair = parts[0]
                 ebook_name = pair.split('-')[0]
-            else
+            else:
                 ebook_name = parts[0]
             intersection = int(parts[1])
             ebook_count = int(parts[2])

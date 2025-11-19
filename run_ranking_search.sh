@@ -218,7 +218,7 @@ hadoop jar "$HADOOP_STREAMING_JAR" \
 	-mapper "/bin/cat" \
 	-reducer "python3 $RANKING_SEARCH_SCRIPT" \
 	-file "$RANKING_SEARCH_SCRIPT" \
-	-cmdenv q_from_user="query"
+	-cmdenv options="query"
 	
 
 JOB_EXIT_CODE=$?
