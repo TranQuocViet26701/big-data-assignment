@@ -81,7 +81,7 @@ def reducer_phase1(term, values, total_docs):
         parsed.append((fname, w_int))
 
     # ---- Common-term filter giống MR/Spark ----
-    if len(parsed) == total_docs:
+    if len(parsed) == 1 or len(parsed) == total_docs:
         return None
 
     # ---- (2) Sort theo W giảm dần (MR logic) ----
@@ -107,7 +107,7 @@ if __name__ == "__main__":
     sc = SparkContext(conf=conf)
 
     # Read all files from folder
-    rdd = sc.wholeTextFiles(input_dir)
+    rdd = sc.wholeTextFiles(input_dir).cache()
 
     total_docs = rdd.count()
     total_docs_bc = sc.broadcast(total_docs)

@@ -75,20 +75,37 @@ def mapper_phase2(term_row, bc_query_words, bc_query_url):
 # Phase 2 Reducer logic
 # ============================
 
-def reducer_jaccard(pair_key, counts):
+def reducer_jaccard(pair_key, counts, query_url):
     """
-    Input: pair_key = "urlA-urlB@WA@WB"
-           counts = list of 1's
-    Output: (pair_key, sim)
+    Input: 
+        pair_key = "urlA-urlB@WA@WB"
+        counts = list of 1's
+    Output:
+        "urlA-urlB\tmatch_count\tquery_len\tsim"
     """
-    total = sum(counts)
 
-    pair, wA, wB = pair_key.split('@')
+    total = sum(counts)                       # số term intersection
+    pair, wA, wB = pair_key.split('@')        # tách
     wA, wB = int(wA), int(wB)
+    urlA, urlB = pair.split('-')
 
+    # Jaccard
     sim = total / (wA + wB - total)
 
-    return f"{pair}\t{sim}"
+    # xác định đâu là query, đâu là document
+    if urlA == query_url:
+        query_len = wA
+        doc_len   = wB
+    elif urlB == query_url:
+        query_len = wB
+        doc_len   = wA
+    else:
+        # không có query → bỏ luôn
+        return None
+
+    match_count = total
+
+    return f"{pair}\t{match_count}\t{query_len}\t{doc_len}\t{sim}"
 
 # ============================
 # --------------------------------------------------
@@ -106,7 +123,7 @@ if __name__ == "__main__":
     conf = SparkConf().setAppName("Spark-JPII")
     sc = SparkContext(conf=conf)
 
-    rdd = sc.textFile(inverted_index_output)
+    rdd = sc.textFile(inverted_index_output).cache()
 
     # ---- LOAD QUERY FILE ----
     with open(query_file_path, "r") as f:
@@ -128,7 +145,8 @@ if __name__ == "__main__":
     reduced = (
         mapped
         .groupByKey()
-        .map(lambda kv: reducer_jaccard(kv[0], kv[1]))
+        .map(lambda kv: reducer_jaccard(kv[0], kv[1], query_url))
+        .filter(lambda x: x is not None)
     )
     reduced = reduced.sortBy(lambda line: line.split("\t")[0])
 

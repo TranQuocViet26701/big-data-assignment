@@ -3,16 +3,26 @@
 Spark Pipeline Execution and Metrics Collection Script
 
 This script executes the Spark-based inverted index and similarity search pipeline,
-measures performance metrics, and saves results to a CSV file.
+measures performance metrics, and saves results to mode-specific CSV files.
+
+Supports two modes:
+  - jpii: Query-based similarity (requires --query or --query-file)
+  - pairwise: All-pairs similarity (no query needed)
 
 Usage:
-    # With query string:
-    python3 run_spark_pipeline.py --num-books 100 --input-dir /gutenberg-input-100 \\
+    # JPII mode with query string:
+    python3 run_spark_pipeline.py --mode jpii --num-books 100 \\
+        --input-dir /gutenberg-input-100 \\
         --query "wildlife conservation hunting animals"
 
-    # With query file:
-    python3 run_spark_pipeline.py --num-books 100 --input-dir /gutenberg-input-100 \\
+    # JPII mode with query file:
+    python3 run_spark_pipeline.py --mode jpii --num-books 100 \\
+        --input-dir /gutenberg-input-100 \\
         --query-file /path/to/query.txt
+
+    # Pairwise mode (no query needed):
+    python3 run_spark_pipeline.py --mode pairwise --num-books 100 \\
+        --input-dir /gutenberg-input-100
 """
 
 import argparse
@@ -32,8 +42,10 @@ class SparkPipelineRunner:
     def __init__(self, args):
         self.args = args
         self.script_dir = os.path.dirname(os.path.abspath(__file__))
+        self.mode = args.mode
         self.metrics = {
             'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            'mode': args.mode,
             'num_books': args.num_books,
             'num_executors': args.num_executors,
             'executor_memory': args.executor_memory,
@@ -42,7 +54,7 @@ class SparkPipelineRunner:
         # Generate unique output paths based on timestamp
         timestamp_suffix = datetime.now().strftime('%Y%m%d_%H%M%S')
         self.index_output = f"{args.index_output}_{timestamp_suffix}" if not args.index_output.endswith(timestamp_suffix) else args.index_output
-        self.jpii_output = f"{args.jpii_output}_{timestamp_suffix}" if not args.jpii_output.endswith(timestamp_suffix) else args.jpii_output
+        self.stage2_output = f"{args.stage2_output}_{timestamp_suffix}" if not args.stage2_output.endswith(timestamp_suffix) else args.stage2_output
 
     def run_command(self, cmd, description):
         """Execute a shell command and return output"""
@@ -191,7 +203,7 @@ class SparkPipelineRunner:
             {spark_script} \\
             {index_files} \\
             {query_file} \\
-            {self.jpii_output}"""
+            {self.stage2_output}"""
 
         start_time = time.time()
         result = self.run_command(cmd, "Running Spark JPII similarity search")
@@ -205,11 +217,59 @@ class SparkPipelineRunner:
 
         # Collect Stage 2 metrics
         print("\n[INFO] Collecting Stage 2 metrics...")
-        self.metrics['output_size_mb'] = self.get_hdfs_size_mb(self.jpii_output)
-        self.metrics['similarity_pairs'] = self.count_hdfs_lines(self.jpii_output)
+        self.metrics['output_size_mb'] = self.get_hdfs_size_mb(self.stage2_output)
+        self.metrics['similarity_pairs'] = self.count_hdfs_lines(self.stage2_output)
 
         print(f"[METRIC] Output size: {self.metrics['output_size_mb']:.2f} MB")
         print(f"[METRIC] Similarity pairs: {self.metrics['similarity_pairs']}")
+
+    def run_pairwise(self):
+        """Execute Stage 2: Pairwise Similarity with Spark"""
+        print("\n" + "="*80)
+        print("STAGE 2: Computing All-Pairs Document Similarity with Spark (Pairwise)")
+        print("="*80)
+
+        spark_script = os.path.join(self.script_dir, 'spark_pairwise.py')
+
+        # Use the actual output path (with part-* files)
+        index_files = f"{self.index_output}/part-*"
+
+        # Construct spark-submit command
+        cmd = f"""spark-submit \\
+            --master yarn \\
+            --deploy-mode cluster \\
+            --num-executors {self.args.num_executors} \\
+            --executor-memory {self.args.executor_memory} \\
+            --driver-memory {self.args.driver_memory} \\
+            --conf spark.dynamicAllocation.enabled=false \\
+            {spark_script} \\
+            {index_files} \\
+            {self.stage2_output}"""
+
+        start_time = time.time()
+        result = self.run_command(cmd, "Running Spark Pairwise all-pairs similarity")
+        stage2_time = time.time() - start_time
+
+        if result is None:
+            raise Exception("Stage 2 (Pairwise) failed")
+
+        self.metrics['stage2_time_sec'] = round(stage2_time, 2)
+        print(f"[SUCCESS] Stage 2 completed in {stage2_time:.2f} seconds")
+
+        # Collect Stage 2 metrics
+        print("\n[INFO] Collecting Stage 2 metrics...")
+        self.metrics['output_size_mb'] = self.get_hdfs_size_mb(self.stage2_output)
+        self.metrics['similarity_pairs'] = self.count_hdfs_lines(self.stage2_output)
+
+        # Calculate total possible pairs for pairwise mode
+        total_possible_pairs = (self.args.num_books * (self.args.num_books - 1)) // 2
+        self.metrics['total_possible_pairs'] = total_possible_pairs
+        self.metrics['pairs_computed'] = self.metrics['similarity_pairs']
+
+        print(f"[METRIC] Output size: {self.metrics['output_size_mb']:.2f} MB")
+        print(f"[METRIC] Similarity pairs: {self.metrics['similarity_pairs']:,}")
+        print(f"[METRIC] Total possible pairs: {total_possible_pairs:,}")
+        print(f"[METRIC] Pairs computed: {self.metrics['pairs_computed']:,}")
 
     def calculate_totals(self):
         """Calculate total pipeline metrics"""
@@ -222,39 +282,75 @@ class SparkPipelineRunner:
             4
         )
 
+        # Calculate pairwise-specific throughput
+        if self.mode == 'pairwise' and 'pairs_computed' in self.metrics:
+            self.metrics['throughput_pairs_per_sec'] = round(
+                self.metrics['pairs_computed'] / self.metrics['stage2_time_sec'] if self.metrics['stage2_time_sec'] > 0 else 0,
+                2
+            )
+
     def save_metrics_to_csv(self):
-        """Save metrics to CSV file"""
-        csv_file = os.path.join(self.script_dir, 'spark_metrics.csv')
+        """Save metrics to mode-specific CSV file"""
+        # Choose CSV file based on mode
+        if self.mode == 'jpii':
+            csv_file = os.path.join(self.script_dir, 'spark_jpii_metrics.csv')
+            fieldnames = [
+                'timestamp',
+                'mode',
+                'num_books',
+                'stage1_time_sec',
+                'stage2_time_sec',
+                'total_time_sec',
+                'input_size_mb',
+                'index_size_mb',
+                'output_size_mb',
+                'unique_words',
+                'similarity_pairs',
+                'throughput_books_per_sec',
+                'num_executors',
+                'executor_memory',
+                'driver_memory',
+                'input_dir',
+                'index_output',
+                'jpii_output'
+            ]
+            # Add JPII-specific fields
+            self.metrics['jpii_output'] = self.stage2_output
+
+        elif self.mode == 'pairwise':
+            csv_file = os.path.join(self.script_dir, 'spark_pairwise_metrics.csv')
+            fieldnames = [
+                'timestamp',
+                'mode',
+                'num_books',
+                'total_possible_pairs',
+                'stage1_time_sec',
+                'stage2_time_sec',
+                'total_time_sec',
+                'input_size_mb',
+                'index_size_mb',
+                'output_size_mb',
+                'unique_words',
+                'similarity_pairs',
+                'pairs_computed',
+                'throughput_books_per_sec',
+                'throughput_pairs_per_sec',
+                'num_executors',
+                'executor_memory',
+                'driver_memory',
+                'input_dir',
+                'index_output',
+                'pairwise_output'
+            ]
+            # Add pairwise-specific fields
+            self.metrics['pairwise_output'] = self.stage2_output
+
         file_exists = os.path.exists(csv_file)
 
-        # Define CSV columns
-        fieldnames = [
-            'timestamp',
-            'num_books',
-            'stage1_time_sec',
-            'stage2_time_sec',
-            'total_time_sec',
-            'input_size_mb',
-            'index_size_mb',
-            'output_size_mb',
-            'unique_words',
-            'similarity_pairs',
-            'throughput_books_per_sec',
-            'num_executors',
-            'executor_memory',
-            'driver_memory',
-            # 'query',
-            'input_dir',
-            'index_output',
-            'jpii_output'
-        ]
-
-        # Add additional fields to metrics
+        # Add common fields to metrics
         self.metrics['driver_memory'] = self.args.driver_memory
-        # self.metrics['query'] = self.query_content
         self.metrics['input_dir'] = self.args.input_dir
         self.metrics['index_output'] = self.index_output
-        self.metrics['jpii_output'] = self.jpii_output
 
         try:
             with open(csv_file, 'a', newline='') as f:
@@ -278,6 +374,7 @@ class SparkPipelineRunner:
         print("\n" + "="*80)
         print("PIPELINE EXECUTION SUMMARY")
         print("="*80)
+        print(f"Mode:                   {self.mode.upper()}")
         print(f"Timestamp:              {self.metrics['timestamp']}")
         print(f"Dataset:                {self.metrics['num_books']} books")
         print(f"Input Directory:        {self.args.input_dir}")
@@ -292,7 +389,16 @@ class SparkPipelineRunner:
         print(f"")
         print(f"Unique Words:           {self.metrics['unique_words']:,}")
         print(f"Similarity Pairs:       {self.metrics['similarity_pairs']:,}")
-        print(f"Throughput:             {self.metrics['throughput_books_per_sec']:.4f} books/sec")
+
+        # Mode-specific metrics
+        if self.mode == 'pairwise':
+            print(f"Total Possible Pairs:   {self.metrics['total_possible_pairs']:,}")
+            print(f"Pairs Computed:         {self.metrics['pairs_computed']:,}")
+            print(f"Throughput (Books):     {self.metrics['throughput_books_per_sec']:.4f} books/sec")
+            print(f"Throughput (Pairs):     {self.metrics['throughput_pairs_per_sec']:.2f} pairs/sec")
+        else:
+            print(f"Throughput:             {self.metrics['throughput_books_per_sec']:.4f} books/sec")
+
         print(f"")
         print(f"Spark Config:")
         print(f"  Executors:            {self.metrics['num_executors']}")
@@ -308,18 +414,25 @@ class SparkPipelineRunner:
             if not self.validate_hdfs_path(self.args.input_dir):
                 raise Exception(f"Input directory does not exist in HDFS: {self.args.input_dir}")
 
-            # Create or get query file
-            query_file_path, should_cleanup, query_content = self.create_query_file()
+            # Handle query file for JPII mode
+            query_file_path = None
+            should_cleanup = False
 
-            # Store query content for metrics
-            self.query_content = query_content
+            if self.mode == 'jpii':
+                # Create or get query file
+                query_file_path, should_cleanup, query_content = self.create_query_file()
+                # Store query content for metrics
+                self.query_content = query_content
 
             try:
                 # Run Stage 1: Inverted Index
                 self.run_inverted_index()
 
-                # Run Stage 2: JPII Similarity Search
-                self.run_jpii(query_file_path)
+                # Run Stage 2: Mode-specific similarity computation
+                if self.mode == 'jpii':
+                    self.run_jpii(query_file_path)
+                elif self.mode == 'pairwise':
+                    self.run_pairwise()
 
                 # Calculate totals
                 self.calculate_totals()
@@ -331,11 +444,11 @@ class SparkPipelineRunner:
                 self.save_metrics_to_csv()
 
                 print(f"\n[SUCCESS] Pipeline completed successfully!")
-                print(f"[INFO] Results available at: {self.jpii_output}")
+                print(f"[INFO] Results available at: {self.stage2_output}")
 
             finally:
-                # Clean up temporary query file only if we created it
-                if should_cleanup and os.path.exists(query_file_path):
+                # Clean up temporary query file only if we created it (JPII mode)
+                if should_cleanup and query_file_path and os.path.exists(query_file_path):
                     os.remove(query_file_path)
                     print(f"[INFO] Cleaned up temporary query file: {query_file_path}")
 
@@ -350,18 +463,22 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Run with query string
-  python3 run_spark_pipeline.py --num-books 100 \\
+  # JPII mode with query string
+  python3 run_spark_pipeline.py --mode jpii --num-books 100 \\
       --input-dir hdfs:///gutenberg-input-100 \\
       --query "wildlife conservation hunting animals"
 
-  # Run with query file
-  python3 run_spark_pipeline.py --num-books 100 \\
+  # JPII mode with query file
+  python3 run_spark_pipeline.py --mode jpii --num-books 100 \\
       --input-dir hdfs:///gutenberg-input-100 \\
       --query-file /path/to/query.txt
 
-  # Run with custom Spark configuration
-  python3 run_spark_pipeline.py --num-books 200 \\
+  # Pairwise mode (no query needed)
+  python3 run_spark_pipeline.py --mode pairwise --num-books 50 \\
+      --input-dir hdfs:///gutenberg-input-50
+
+  # With custom Spark configuration
+  python3 run_spark_pipeline.py --mode jpii --num-books 200 \\
       --input-dir hdfs:///gutenberg-input-200 \\
       --query "science technology innovation" \\
       --num-executors 8 \\
@@ -370,23 +487,25 @@ Examples:
     )
 
     # Required arguments
+    parser.add_argument('--mode', type=str, choices=['jpii', 'pairwise'], default='jpii',
+                        help='Pipeline mode: jpii (query-based) or pairwise (all-pairs) (default: jpii)')
     parser.add_argument('--num-books', type=int, required=True,
                         help='Number of books in the dataset')
     parser.add_argument('--input-dir', type=str, required=True,
                         help='HDFS input directory containing text files (e.g., hdfs:///gutenberg-input-100)')
 
-    # Query arguments (mutually exclusive - one required)
-    query_group = parser.add_mutually_exclusive_group(required=True)
+    # Query arguments (mutually exclusive - required only for jpii mode)
+    query_group = parser.add_mutually_exclusive_group(required=False)
     query_group.add_argument('--query', type=str,
-                            help='Query text for similarity search (e.g., "wildlife conservation hunting")')
+                            help='Query text for JPII similarity search (e.g., "wildlife conservation hunting")')
     query_group.add_argument('--query-file', type=str,
-                            help='Path to local file containing query text')
+                            help='Path to local file containing query text (for JPII mode)')
 
     # Optional arguments with defaults
     parser.add_argument('--index-output', type=str, default=None,
                         help='HDFS output directory for inverted index (default: hdfs:///spark-index-{num_books})')
-    parser.add_argument('--jpii-output', type=str, default=None,
-                        help='HDFS output directory for JPII results (default: hdfs:///spark-jpii-{num_books})')
+    parser.add_argument('--stage2-output', type=str, default=None,
+                        help='HDFS output directory for stage 2 results (default: hdfs:///spark-{mode}-{num_books})')
 
     # Spark configuration
     parser.add_argument('--num-executors', type=int, default=4,
@@ -398,11 +517,15 @@ Examples:
 
     args = parser.parse_args()
 
+    # Validate mode-specific requirements
+    if args.mode == 'jpii' and not args.query and not args.query_file:
+        parser.error("--mode jpii requires either --query or --query-file")
+
     # Set default output paths if not provided
     if args.index_output is None:
         args.index_output = f"hdfs:///spark-index-{args.num_books}"
-    if args.jpii_output is None:
-        args.jpii_output = f"hdfs:///spark-jpii-{args.num_books}"
+    if args.stage2_output is None:
+        args.stage2_output = f"hdfs:///spark-{args.mode}-{args.num_books}"
 
     # Run the pipeline
     runner = SparkPipelineRunner(args)
