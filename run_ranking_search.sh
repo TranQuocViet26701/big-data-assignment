@@ -213,11 +213,12 @@ hadoop jar "$HADOOP_STREAMING_JAR" \
     -D mapreduce.job.name="Ranking Search" \
     -D mapreduce.map.memory.mb=2048 \
     -D mapreduce.reduce.memory.mb=2048 \
-    -input "$HDFS_INPUT_PATH_PATH" \
+    -input "$HDFS_INPUT_PATH" \
     -output "$HDFS_OUTPUT_PATH" \
 	-mapper "/bin/cat" \
 	-reducer "python3 $RANKING_SEARCH_SCRIPT" \
-	-file "$RANKING_SEARCH_SCRIPT"
+	-file "$RANKING_SEARCH_SCRIPT" \
+	-cmdenv q_from_user="query"
 	
 
 JOB_EXIT_CODE=$?
