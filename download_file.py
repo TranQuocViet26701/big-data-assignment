@@ -19,6 +19,16 @@ from urllib.request import urlopen
 from gutenberg.acquire import load_etext
 from gutenberg.cleanup import strip_headers
 
+def hdfs_dir_exists(path: str) -> bool:
+    cmd = ["hdfs", "dfs", "-test", "-d", path]
+    result = subprocess.run(cmd)
+    return result.returncode == 0
+
+def create_hdfs_dir(path: str) -> subprocess.CompletedProcess[str]:
+    cmd_mkdir = ["hdfs", "dfs", "-mkdir", "-p", path]
+    result_mkdir = subprocess.run(cmd_mkdir, capture_output=True, text=True)
+    return result_mkdir
+
 # only removes funny tokens for English texts
 def remove_funny_tokens(text):
     tokens = text.split()
@@ -120,12 +130,23 @@ else:
         df_metadata = df_metadata.iloc[args.start_row:]
     print(Fore.CYAN + f"[INFO] Processing all {len(df_metadata)} books from CSV")
 
+if not hdfs_dir_exists(args.hdfs_dir):
+    print(Fore.YELLOW + f"[HDFS] HDFS directory {args.hdfs_dir} does not exist. Creating it...")
+    result = create_hdfs_dir(args.hdfs_dir)
+    if result.returncode == 0:
+        print(Fore.GREEN + f"[HDFS] HDFS directory {args.hdfs_dir} created successfully.")
+    else:
+        print(Fore.RED + f"[HDFS] Error creating HDFS directory {args.hdfs_dir}: {result.stderr}")
+        sys.exit(1)
+
 print(Fore.CYAN + f"[INFO] Target HDFS directory: {args.hdfs_dir}")
 print(Fore.CYAN + "=" * 70)
 
 data = {'Author': None, 'Title': None, 'Link': None, 'ID': None, 'Bookshelf': None, 'Text': None}
 
 rm_files = []
+
+file_map = {}
 
 for key, row in df_metadata.iterrows():
     if data['Author'] == None:
@@ -178,6 +199,10 @@ for key, row in df_metadata.iterrows():
 
 
     local_file = f"{str(key + 1).zfill(5)}.txt"
+
+    # map title to hdfs file name
+    file_map[local_file] = row['Title']
+
     with open(local_file, "w") as f:
         f.write(' '.join(text.split(' ')))
 
@@ -198,6 +223,29 @@ for key, row in df_metadata.iterrows():
 
     rm_files.append(local_file)
     print(Fore.LIGHTBLUE_EX + "===============================")
-    
+
+# Save file map to convert from hdfs file name to book title
+print(Fore.CYAN + "[INFO] Saving file map to file_map.csv")
+df = pd.DataFrame(list(file_map.items()), columns=["file_id", "file_name"])
+df.to_csv("file_map.csv", index=False)    
+# Upload file_map.csv to HDFS
+if not hdfs_dir_exists('/gutenberg-metadata'):
+    print(Fore.YELLOW + f"[HDFS] HDFS directory /gutenberg-metadata does not exist. Creating it...")
+    result = create_hdfs_dir('/gutenberg-metadata')
+    if result.returncode == 0:
+        print(Fore.GREEN + f"[HDFS] HDFS directory /gutenberg-metadata created successfully.")
+        cmd_map = ['hdfs', 'dfs', '-put', '-f', 'file_map.csv', '/gutenberg-metadata']
+        result_map = subprocess.run(cmd_map, capture_output=True, text=True)
+        if result_map.returncode == 0:
+            print(Fore.GREEN + f"[HDFS] file_map.csv successfully uploaded to /gutenberg-metadata")
+        else:
+            print(Fore.RED + f"[HDFS] Error uploading file_map.csv: {result_map.stderr}")
+            sys.exit(1)
+    else:
+        print(Fore.RED + f"[HDFS] Error creating HDFS directory /gutenberg-metadata: {result.stderr}")
+        sys.exit(1)
+
+os.remove("file_map.csv")
+
 for rm_file in rm_files:
     os.remove(rm_file)
