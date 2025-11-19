@@ -29,11 +29,9 @@ def main(separator='\t'):
     data = read_mapper_2_output(sys.stdin, separator=separator)
     # query url same as mapper
     query_url = os.getenv('q_from_user')
-    if not query_url:
-        print("[ERROR] Reducer did not receive q_from_user", file=sys.stderr)
-        return
+    if query_url:
+        query_url = os.path.basename(query_url)
 
-    query_url = os.path.basename(query_url)
     for current_word, group in groupby(data, itemgetter(0)):
         try:
             total_count = sum(int(count) for current_word, count in group)
@@ -42,19 +40,18 @@ def main(separator='\t'):
             w_i = int(w_i)
             w_j = int(w_j)
             #sim = float(total_count) / (int(w_i) + int(w_j) - total_count)
-            if url_i == query_url:
-                query_len = w_i
-                doc_len   = w_j
-            elif url_j == query_url:
-                query_len = w_j
-                doc_len   = w_i
-            else:
-                continue
+      
             # intersection size = total_count
             match_count = total_count
-            sim = match_count / (query_len + doc_len - match_count)
-            print("{}{}{}{}{}{}{}{}{}".format(url_ij,separator,match_count,separator,
-                                              query_len,separator,doc_len,separator,sim))
+            if query_url and (url_i == query_url or url_j == query_url):
+                query_len = w_i if url_i == query_url else w_j
+                doc_len   = w_j if url_i == query_url else w_i
+                sim = match_count / (query_len + doc_len - match_count)
+            else:
+                # pairwise mode, tính Jaccard cho tất cả cặp
+                sim = match_count / (w_i + w_j - match_count)
+          
+            print(f"{url_ij}{separator}{match_count}{separator}{w_i}{separator}{w_j}{separator}{sim}")
         except ValueError:
             pass
 
