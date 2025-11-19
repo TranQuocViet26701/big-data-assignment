@@ -41,48 +41,31 @@ def main(separator='\t'):
     # get URL of query
     # file_url = os.getenv('mapreduce_map_input_file')
     # file_url = file_url if file_url else "random_filename"
+    # get filename containing content of query from hadoop environment
+    QUERY_FILE_NAME = os.getenv('q_from_user')
 
-    # Get query content - try file first (distributed via -files), then environment variable
-    raw_query = None
-
-    # Try reading from distributed file first (avoids command-line length limits)
-    if os.path.exists('query_temp.txt'):
-        try:
-            with open('query_temp.txt', 'r') as f:
-                raw_query = f.read().strip()
-        except Exception as e:
-            print(f"[WARN] Failed to read query file: {e}", file=sys.stderr)
-
-    # Fall back to environment variable for backward compatibility
-    if not raw_query:
-        raw_query = os.getenv('q_from_user')
-
-    #print("[DEBUG] raw_query =", raw_query, file=sys.stderr)
+    try:
+        with open(QUERY_FILE_NAME, 'r') as f:
+            raw_query = f.read()
+    except FileNotFoundError:
+        print(f"[ERROR] Query file '{QUERY_FILE}' not found.", file=sys.stderr)
+        return
 
     query_words = set(transform(raw_query if raw_query else '').split())
+    query_url = os.path.basename(QUERY_FILE_NAME)
 
     for term, elements in data:
         if term not in query_words:
             continue
 
-        urlq, wq = 'query.txt', len(query_words)
+        urlq, wq = query_url, len(query_words)
         for element in elements:
-            # Validate element format
-            if '@' not in element:
-                continue
-
-            try:
-                url, w = element.split('@')
-                w = int(w)
-            except (ValueError, IndexError) as e:
-                # Skip malformed elements
-                continue
-
+            url, w = element.split('@')
             if url != urlq:
-                if w > wq:
-                    print("{}-{}@{}@{}\t{}".format(url, urlq, w, wq, 1))
+                if int(w) > int(wq):
+                    print("{}-{}@{}@{}\t{}".format(url, urlq, int(w), int(wq), 1))
                 else:
-                    print("{}-{}@{}@{}\t{}".format(urlq, url, wq, w, 1))
+                    print("{}-{}@{}@{}\t{}".format(urlq, url, int(wq), int(w), 1))
 
 if __name__ == "__main__":
     main()

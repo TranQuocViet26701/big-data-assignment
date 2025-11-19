@@ -29,8 +29,7 @@ def main(separator='\t', second_sep='@'):
         uacs = [uc for _, uc in group]
         uacs = [(url, int(count)) for url, count in read_mapper_output(uacs, second_sep)]
         # lonely word or common word
-        # if len(uacs) == 1 or len(uacs) == total_map:
-        if len(uacs) == total_map:
+        if len(uacs) == 1 or len(uacs) == total_map:
             continue
         sorted_uacs = ["{}{}{}".format(url, second_sep, count) \
                        for url, count in sorted(uacs, key=itemgetter(1), reverse=True)]
