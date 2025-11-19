@@ -30,10 +30,8 @@ NC='\033[0m' # No Color
 # Default Configuration
 HDFS_INPUT_PATH="/gutenberg-output"
 HDFS_OUTPUT_PATH="/jpii-output"
-MAPPER_SCRIPT="jpii_mapper.py"
-REDUCER_SCRIPT="jpii_reducer.py"
 RANKING_SEARCH_SCRIPT="ranking_search.py"
-NUM_REDUCERS=2
+NUM_REDUCERS=1
 QUERY="query.txt"
 
 # Parse command-line arguments
@@ -125,21 +123,14 @@ fi
 print_success "Found Hadoop streaming jar: $HADOOP_STREAMING_JAR"
 
 # Check if mapper script exists
-if [ ! -f "$MAPPER_SCRIPT" ]; then
-    print_error "Mapper script not found: $MAPPER_SCRIPT"
+if [ ! -f "$RANKING_SEARCH_SCRIPT" ]; then
+    print_error "Ranking search script not found: $RANKING_SEARCH_SCRIPT"
     exit 1
 fi
-print_success "Found mapper script: $MAPPER_SCRIPT"
-
-# Check if reducer script exists
-if [ ! -f "$REDUCER_SCRIPT" ]; then
-    print_error "Reducer script not found: $REDUCER_SCRIPT"
-    exit 1
-fi
-print_success "Found reducer script: $REDUCER_SCRIPT"
+print_success "Found ranking search script: $RANKING_SEARCH_SCRIPT"
 
 # Make scripts executable
-chmod +x "$MAPPER_SCRIPT" "$REDUCER_SCRIPT"
+chmod +x "$RANKING_SEARCH_SCRIPT"
 print_status "Made scripts executable"
 
 # Check if Hadoop is accessible
@@ -201,8 +192,7 @@ print_header "Step 3: Hadoop Streaming Job Configuration"
 print_status "Job Configuration:"
 echo "  - Input Path: $HDFS_INPUT_PATH"
 echo "  - Output Path: $HDFS_OUTPUT_PATH"
-echo "  - Mapper: $MAPPER_SCRIPT"
-echo "  - Reducer: $REDUCER_SCRIPT"
+echo "  - Ranking search script: $RANKING_SEARCH_SCRIPT"
 echo "  - Number of Reducers: $NUM_REDUCERS"
 echo "  - Total Documents: $INPUT_FILE_COUNT"
 echo "  - QUERY: $QUERY"
@@ -219,18 +209,15 @@ echo ""
 # Execute Hadoop streaming job
 # NOTE: -D options (generic options) MUST come before streaming options
 hadoop jar "$HADOOP_STREAMING_JAR" \
-    -D mapreduce.job.reduces="$NUM_REDUCERS" \
-    -D mapreduce.job.name="JAccard_Gutenberg" \
+    -D mapreduce.job.reduces=1	 \
+    -D mapreduce.job.name="Ranking Search" \
     -D mapreduce.map.memory.mb=2048 \
     -D mapreduce.reduce.memory.mb=2048 \
-    -input "$HDFS_INPUT_PATH" \
+    -input "$HDFS_INPUT_PATH_PATH" \
     -output "$HDFS_OUTPUT_PATH" \
-	-mapper "python3 $MAPPER_SCRIPT" \
-	-reducer "python3 $REDUCER_SCRIPT" \
-	-file "$MAPPER_SCRIPT" \
-	-file "$REDUCER_SCRIPT" \
-	-file "$QUERY" \
-	-cmdenv q_from_user="$QUERY"
+	-mapper "/bin/cat" \
+	-reducer "python3 $RANKING_SEARCH_SCRIPT" \
+	-file "$RANKING_SEARCH_SCRIPT"
 	
 
 JOB_EXIT_CODE=$?
@@ -244,11 +231,9 @@ else
     exit $JOB_EXIT_CODE
 fi
 
-
 ################################################################################
 # 5. POST-EXECUTION
 ################################################################################
-
 print_header "Step 5: Results Summary"
 
 # Check output directory
@@ -280,5 +265,6 @@ else
     print_error "Output directory was not created"
     exit 1
 fi
+echo "----------------------------------------------------"
 
 print_header "Job Complete!"

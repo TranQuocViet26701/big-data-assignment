@@ -307,11 +307,10 @@ else
 fi
 
 ################################################################################
-# Step 4: Run MapReduce Job
+# Step 4: Run Inverted Index MapReduce Job
 ################################################################################
 
 print_header "Step 4: Running MapReduce Job"
-
 print_status "Starting Hadoop Streaming MapReduce job..."
 print_status "Input: $HDFS_INPUT_PATH"
 print_status "Output: $HDFS_OUTPUT_PATH"
@@ -336,11 +335,75 @@ else
     exit $MAPREDUCE_EXIT
 fi
 
+
 ################################################################################
-# Step 5: Results Summary
+# Step 5: Run Jaccard MapReduce Job
+################################################################################
+# Generate HDFS directory names based on book count
+HDFS_JACCARD_INPUT_PATH="/gutenberg-output-${NUM_BOOKS}"
+HDFS_JACCARD_OUTPUT_PATH="/jaccard-output-${NUM_BOOKS}"
+
+print_header "Step 5: Running Jaccard MapReduce Job"
+print_status "Starting Hadoop Streaming MapReduce job..."
+print_status "Input: $HDFS_JACCARD_INPUT_PATH"
+print_status "Output: $HDFS_JACCARD_OUTPUT_PATH"
+print_status "Reducers: $NUM_REDUCERS"
+echo ""
+
+MAPREDUCE_START=$(date +%s)
+
+./run_jpii.sh \
+    --input "$HDFS_JACCARD_INPUT_PATH" \
+    --output "$HDFS_JACCARD_OUTPUT_PATH" \
+    --reducers "$NUM_REDUCERS"
+
+MAPREDUCE_EXIT=$?
+MAPREDUCE_END=$(date +%s)
+MAPREDUCE_DURATION=$((MAPREDUCE_END - MAPREDUCE_START))
+
+if [ $MAPREDUCE_EXIT -eq 0 ]; then
+    print_success "MapReduce job completed in ${MAPREDUCE_DURATION}s"
+else
+    print_error "MapReduce job failed with exit code: $MAPREDUCE_EXIT"
+    exit $MAPREDUCE_EXIT
+fi
+
+################################################################################
+# Step 6: Run Jaccard MapReduce Job
+################################################################################
+# Ranking search
+HDFS_SEARCH_OUTPUT_PATH="/ranking-search-${NUM_BOOKS}"
+
+print_header "Step 6: Running Ranking Search Job"
+print_status "Starting Hadoop Streaming MapReduce job..."
+print_status "Input: $HDFS_JACCARD_OUTPUT_PATH"
+print_status "Output: $HDFS_SEARCH_OUTPUT_PATH"
+print_status "Reducers: 1"
+echo ""
+
+MAPREDUCE_START=$(date +%s)
+
+./run_ranking_search.sh \
+    --input "$HDFS_JACCARD_OUTPUT_PATH" \
+    --output "$HDFS_SEARCH_OUTPUT_PATH" \
+    --reducers "1"
+
+MAPREDUCE_EXIT=$?
+MAPREDUCE_END=$(date +%s)
+MAPREDUCE_DURATION=$((MAPREDUCE_END - MAPREDUCE_START))
+
+if [ $MAPREDUCE_EXIT -eq 0 ]; then
+    print_success "MapReduce job completed in ${MAPREDUCE_DURATION}s"
+else
+    print_error "MapReduce job failed with exit code: $MAPREDUCE_EXIT"
+    exit $MAPREDUCE_EXIT
+fi
+
+################################################################################
+# Step 7: Results Summary
 ################################################################################
 
-print_header "Step 5: Results Summary"
+print_header "Step 7: Results Summary"
 
 # Verify output
 if hadoop fs -test -d "$HDFS_OUTPUT_PATH"; then
@@ -400,4 +463,30 @@ echo ""
 print_status "To search for a specific word:"
 echo "  hadoop fs -cat $HDFS_OUTPUT_PATH/part-* | grep '^yourword'"
 echo ""
+
+################################################################################
+# Step 8: Results
+################################################################################
+OUTPUT_FILE="$HDFS_SEARCH_OUTPUT_PATH/part-00000"
+
+echo "## 🏆 Top Ebooks Ranking 🏆"
+echo "----------------------------------------------------"
+echo "Rank | Ebook Name        | Jaccard Score | F1-Score"
+echo "----------------------------------------------------"
+
+hdfs dfs -cat "$OUTPUT_FILE" | awk '
+BEGIN {
+    # Set the input field separator to a tab
+    FS="\t"; 
+    # Set the output field separator to a pipe and space
+    OFS=" | "
+}
+{
+    # $1=EbookName, $2=Rank, $3=Jaccard, $4=F1 (Mapping from the Python Reducer output)
+    # Format and print each line
+    printf "%-5s | %-16s | %-13s | %-8s\n", $2, $1, $3, $4
+}'
+
+echo "----------------------------------------------------"
+
 print_success "All done! 🎉"
