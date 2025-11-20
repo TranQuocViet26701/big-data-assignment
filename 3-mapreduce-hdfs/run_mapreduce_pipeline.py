@@ -322,6 +322,7 @@ class MapReducePipelineRunner:
                 -mapper {os.path.basename(mapper_script)} \\
                 -reducer {os.path.basename(reducer_script)} \\
                 -cmdenv q_from_user={os.path.basename(query_file_final)} \\
+                -cmdenv num_docs={self.args.num_books} \\
                 -input {self.index_output} \\
                 -output {self.stage2_output}"""
 
@@ -375,9 +376,12 @@ class MapReducePipelineRunner:
 
     def save_metrics_to_csv(self):
         """Save metrics to mode-specific CSV file"""
+        metrics_dir = os.path.join(self.script_dir, 'metrics')
+        os.makedirs(metrics_dir, exist_ok=True)
+
         # Choose CSV file based on mode
         if self.mode == 'jpii':
-            csv_file = os.path.join(self.script_dir, 'mapreduce_jpii_metrics.csv')
+            csv_file = os.path.join(metrics_dir, 'mapreduce_jpii_metrics.csv')
             fieldnames = [
                 'timestamp',
                 'mode',
@@ -400,7 +404,7 @@ class MapReducePipelineRunner:
             self.metrics['jpii_output'] = self.stage2_output
 
         elif self.mode == 'pairwise':
-            csv_file = os.path.join(self.script_dir, 'mapreduce_pairwise_metrics.csv')
+            csv_file = os.path.join(metrics_dir, 'idf_mapreduce_pairwise_metrics.csv')
             fieldnames = [
                 'timestamp',
                 'mode',

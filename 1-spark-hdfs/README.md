@@ -193,6 +193,19 @@ for size in 10 50 100 200; do
         --query "science technology innovation"
 done
 
+python3 run_spark_pipeline.py --mode pairwise --num-books 10 \
+    --input-dir hdfs:///gutenberg-input-10 \
+    --query-file /home/ktdl9/big-data-assignment/my_query.txt \
+    --num-executors 6
+
+
+for size in 50 100 200; do
+    python3 run_spark_pipeline.py --mode pairwise --num-books $size \
+        --input-dir hdfs:///gutenberg-input-$size \
+        --query-file /home/ktdl9/big-data-assignment/my_query.txt \
+        --num-executors 6
+done
+
 # View all metrics
 cat spark_metrics.csv
 ```

@@ -291,9 +291,12 @@ class SparkPipelineRunner:
 
     def save_metrics_to_csv(self):
         """Save metrics to mode-specific CSV file"""
+        metrics_dir = os.path.join(self.script_dir, 'metrics')
+        os.makedirs(metrics_dir, exist_ok=True)
+
         # Choose CSV file based on mode
         if self.mode == 'jpii':
-            csv_file = os.path.join(self.script_dir, 'spark_jpii_metrics.csv')
+            csv_file = os.path.join(metrics_dir, 'spark_jpii_metrics.csv')
             fieldnames = [
                 'timestamp',
                 'mode',
@@ -318,7 +321,7 @@ class SparkPipelineRunner:
             self.metrics['jpii_output'] = self.stage2_output
 
         elif self.mode == 'pairwise':
-            csv_file = os.path.join(self.script_dir, 'spark_pairwise_metrics.csv')
+            csv_file = os.path.join(metrics_dir, 'improved_spark_pairwise_metrics.csv')
             fieldnames = [
                 'timestamp',
                 'mode',
