@@ -526,7 +526,7 @@ class MapReducePipelineRunner:
             
         print("\n## 🏆 Top Ebooks Ranking 🏆", file=sys.stderr)
         print("--------------------------------------------------------------------------------------------", file=sys.stderr)
-        print("{:<5} | {:<30} | {:<10} | {:<10} | {:<10} | {:<12} ".format(
+        print("{:<5} | {:<10} | {:<10} | {:<10} | {:<10} | {:<12} ".format(
             "Rank", "Ebook Name", "Jaccard", "F1-Score", "Overlap", "Shared Terms"
         ), file=sys.stderr)
         print("--------------------------------------------------------------------------------------------", file=sys.stderr)
