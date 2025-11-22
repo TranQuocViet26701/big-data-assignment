@@ -102,11 +102,10 @@ class MapReducePipelineRunner:
         # Default to standard path
         return "/usr/lib/hadoop-mapreduce/hadoop-streaming.jar"
 
-    def run_command(self, cmd, description, printinfo):
+    def run_command(self, cmd, description):
         """Execute a shell command and return output"""
-        if printinfo == "":
-            print(f"\n[INFO] {description}")
-            print(f"[CMD] {cmd}")
+        print(f"\n[INFO] {description}")
+        print(f"[CMD] {cmd}")
 
         try:
             result = subprocess.run(
@@ -134,7 +133,7 @@ class MapReducePipelineRunner:
     def get_hdfs_size_mb(self, hdfs_path):
         """Get size of HDFS path in MB"""
         cmd = f"hdfs dfs -du -s {hdfs_path} 2>/dev/null | awk '{{print $1}}'"
-        output = self.run_command(cmd, f"Getting size of {hdfs_path}","")
+        output = self.run_command(cmd, f"Getting size of {hdfs_path}")
 
         if output and output.isdigit():
             size_bytes = int(output)
@@ -145,7 +144,7 @@ class MapReducePipelineRunner:
     def count_hdfs_lines(self, hdfs_path):
         """Count number of lines in HDFS file(s)"""
         cmd = f"hdfs dfs -cat {hdfs_path}/part-* 2>/dev/null | wc -l"
-        output = self.run_command(cmd, f"Counting lines in {hdfs_path}","")
+        output = self.run_command(cmd, f"Counting lines in {hdfs_path}")
 
         if output and output.isdigit():
             return int(output)
@@ -154,7 +153,7 @@ class MapReducePipelineRunner:
     def count_hdfs_files(self, hdfs_path):
         """Count number of files in HDFS directory"""
         cmd = f"hdfs dfs -ls {hdfs_path} 2>/dev/null | grep -v '^d' | wc -l"
-        output = self.run_command(cmd, f"Counting files in {hdfs_path}","")
+        output = self.run_command(cmd, f"Counting files in {hdfs_path}")
 
         if output and output.isdigit():
             count = int(output)
@@ -216,7 +215,7 @@ class MapReducePipelineRunner:
             -output {self.index_output}"""
 
         start_time = time.time()
-        result = self.run_command(cmd, "Running MapReduce Inverted Index job","")
+        result = self.run_command(cmd, "Running MapReduce Inverted Index job")
         stage1_time = time.time() - start_time
 
         if result is None:
@@ -271,7 +270,7 @@ class MapReducePipelineRunner:
                 -output {self.stage2_output}"""
 
             start_time = time.time()
-            result = self.run_command(cmd, "Running MapReduce JPII similarity search","")
+            result = self.run_command(cmd, "Running MapReduce JPII similarity search")
             stage2_time = time.time() - start_time
 
             if result is None:
@@ -329,7 +328,7 @@ class MapReducePipelineRunner:
                 -output {self.stage2_output}"""
 
             start_time = time.time()
-            result = self.run_command(cmd, "Running MapReduce Pairwise all-pairs similarity","")
+            result = self.run_command(cmd, "Running MapReduce Pairwise all-pairs similarity")
             stage2_time = time.time() - start_time
 
             if result is None:
@@ -512,7 +511,7 @@ class MapReducePipelineRunner:
                 -output {self.ranking_search_output}"""
 
             start_time = time.time()
-            result = self.run_command(cmd, "Running MapReduce Ranking Search similarity","")
+            result = self.run_command(cmd, "Running MapReduce Ranking Search similarity")
             stage3_time = time.time() - start_time
 
             if result is None:
@@ -525,16 +524,42 @@ class MapReducePipelineRunner:
             raise
             
         print("\n## 🏆 Top Ebooks Ranking 🏆", file=sys.stderr)
-        print("--------------------------------------------------------------------------------------------", file=sys.stderr)
-        print("{:<5} | {:<10} | {:<10} | {:<10} | {:<10} | {:<12} ".format(
-            "Rank", "Ebook Name", "Jaccard", "F1-Score", "Overlap", "Shared Terms"
+        print("--------------------------------------------------------------------------------------", file=sys.stderr)
+        print("{:<5} | {:<20} | {:<10} | {:<10} | {:<10} | {:<12} ".format(
+        "Rank", "Ebook Name", "Jaccard", "F1-Score", "Overlap", "Shared Terms"
         ), file=sys.stderr)
-        print("--------------------------------------------------------------------------------------------", file=sys.stderr)
+        print("--------------------------------------------------------------------------------------", file=sys.stderr)
         outputfile = "part-00000"
         outputpath = os.path.join(self.ranking_search_output,outputfile) 
-        output = subprocess.check_output(["hdfs", "dfs", "-cat", outputpath], text=True)
-        print(output)
-        print("--------------------------------------------------------------------------------------------", file=sys.stderr)
+        output_raw = subprocess.check_output(["hdfs", "dfs", "-cat", outputpath], text=True)
+        # Process and print each line of data
+        for line in output_raw.strip().split('\n'):
+            if not line:
+                continue
+            
+            # Assume values are delimited by a tab ('\t') or your chosen SEPARATOR
+            parts = line.split('\t') 
+
+            # Check if there are enough fields to avoid IndexError
+            if len(parts) >= 6:
+                # --- Apply Formatting and Type Conversion ---
+                # Note: Ensure fields 2 and 3 are converted to float for the .4f format
+                
+                rank = parts[0]
+                ebook_name = parts[1]
+                jaccard = float(parts[2])  # Assuming this field is a float
+                f1_score = float(parts[3]) # Assuming this field is a float
+                overlap = parts[4]
+                shared_terms = parts[5]
+
+                # Print the formatted data row
+                print("{:<5} | {:<20} | {:<10} | {:<10} | {:<10} | {:<12} ".format(
+                rank, ebook_name, jaccard, f1_score, overlap, shared_terms
+                ))
+            else:
+                # Handle cases where the data line is invalid
+                print(f"ERROR: Invalid data format in line: {line}", file=sys.stderr)
+        print("--------------------------------------------------------------------------------------", file=sys.stderr)
         
         
 
