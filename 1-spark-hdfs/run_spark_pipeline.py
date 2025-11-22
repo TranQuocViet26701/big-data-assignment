@@ -297,7 +297,7 @@ class SparkPipelineRunner:
 
         # Choose CSV file based on mode
         if self.mode == 'jpii':
-            csv_file = os.path.join(metrics_dir, 'spark_jpii_metrics.csv')
+            csv_file = os.path.join(metrics_dir, 'latest_spark_jpii_metrics.csv')
             fieldnames = [
                 'timestamp',
                 'mode',
@@ -323,7 +323,7 @@ class SparkPipelineRunner:
             self.metrics['jpii_output'] = self.stage2_output
 
         elif self.mode == 'pairwise':
-            csv_file = os.path.join(metrics_dir, 'improved_spark_pairwise_metrics.csv')
+            csv_file = os.path.join(metrics_dir, 'latest_spark_pairwise_metrics.csv')
             fieldnames = [
                 'timestamp',
                 'mode',

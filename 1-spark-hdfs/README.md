@@ -203,7 +203,7 @@ python3 run_spark_pipeline.py --mode pairwise --num-books 10 \
     --num-executors 6
 
 
-for size in 50 100 200; do
+for size in 10 50 100 200; do
     python3 run_spark_pipeline.py --mode pairwise --num-books $size \
         --input-dir hdfs:///gutenberg-input-$size \
         --query-file /home/ktdl9/big-data-assignment/my_query.txt \
