@@ -59,6 +59,8 @@ def read_input_from_streaming(options):
                     query_count = w1
                     ebook_name = pair.split('-')[1]
             else:
+                ebook_count = w1
+                query_count = w2
                 ebook_name = parts[0]
             
             # Layer 1 Filter (Custom Logic: Intersection must be >= QueryCount/2)
@@ -147,4 +149,5 @@ if __name__ == "__main__":
     top_results = rank_candidates(candidate_list)
     
     # 3. Print results (STDOUT for Hadoop output, STDERR for monitoring)
+
     print_results(top_results)
