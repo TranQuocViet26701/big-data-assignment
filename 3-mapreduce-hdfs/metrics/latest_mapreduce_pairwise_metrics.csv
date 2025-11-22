@@ -1,3 +1,4 @@
+timestamp,mode,num_books,total_possible_pairs,stage1_time_sec,stage2_time_sec,stage3_time_sec,total_time_sec,input_size_mb,index_size_mb,output_size_mb,unique_words,similarity_pairs,pairs_computed,throughput_books_per_sec,throughput_pairs_per_sec,num_reducers,input_dir,index_output,pairwise_output
 2025-11-22 11:32:03,pairwise,10,45,55.37,36.87,33.92,126.16,3.67,0.63,0.0,10027,45,45,0.0793,1.22,6,hdfs:///gutenberg-input-10,hdfs:///mapreduce-index-10_20251122_113203,hdfs:///mapreduce-pairwise-10_20251122_113203
 2025-11-22 11:34:33,pairwise,50,1225,70.03,47.66,37.0,154.69,20.45,4.33,0.06,36293,1225,1225,0.3232,25.7,6,hdfs:///gutenberg-input-50,hdfs:///mapreduce-index-50_20251122_113433,hdfs:///mapreduce-pairwise-50_20251122_113433
 2025-11-22 11:37:34,pairwise,100,4950,111.24,60.47,36.68,208.39,38.69,9.47,0.26,63498,4950,4950,0.4799,81.86,6,hdfs:///gutenberg-input-100,hdfs:///mapreduce-index-100_20251122_113734,hdfs:///mapreduce-pairwise-100_20251122_113734
