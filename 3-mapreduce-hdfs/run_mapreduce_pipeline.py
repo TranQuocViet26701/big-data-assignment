@@ -55,6 +55,7 @@ class MapReducePipelineRunner:
         timestamp_suffix = datetime.now().strftime('%Y%m%d_%H%M%S')
         self.index_output = f"{args.index_output}_{timestamp_suffix}" if not args.index_output.endswith(timestamp_suffix) else args.index_output
         self.stage2_output = f"{args.stage2_output}_{timestamp_suffix}" if not args.stage2_output.endswith(timestamp_suffix) else args.stage2_output
+        self.ranking_search_output = f"{args.ranking_search_output}_{timestamp_suffix}" if not args.ranking_search_output.endswith(timestamp_suffix) else args.ranking_search_output
 
         # Find Hadoop streaming jar
         self.hadoop_streaming_jar = self.find_hadoop_streaming_jar()
@@ -359,7 +360,7 @@ class MapReducePipelineRunner:
     def calculate_totals(self):
         """Calculate total pipeline metrics"""
         self.metrics['total_time_sec'] = round(
-            self.metrics['stage1_time_sec'] + self.metrics['stage2_time_sec'],
+            self.metrics['stage1_time_sec'] + self.metrics['stage2_time_sec'] + self.metrics['stage3_time_sec'],
             2
         )
         self.metrics['throughput_books_per_sec'] = round(
@@ -388,6 +389,7 @@ class MapReducePipelineRunner:
                 'num_books',
                 'stage1_time_sec',
                 'stage2_time_sec',
+                'stage3_time_sec',
                 'total_time_sec',
                 'input_size_mb',
                 'index_size_mb',
@@ -412,6 +414,7 @@ class MapReducePipelineRunner:
                 'total_possible_pairs',
                 'stage1_time_sec',
                 'stage2_time_sec',
+                'stage3_time_sec',
                 'total_time_sec',
                 'input_size_mb',
                 'index_size_mb',
@@ -464,6 +467,7 @@ class MapReducePipelineRunner:
         print(f"")
         print(f"Stage 1 (Index):        {self.metrics['stage1_time_sec']:.2f} sec")
         print(f"Stage 2 (Similarity):   {self.metrics['stage2_time_sec']:.2f} sec")
+        print(f"Stage 3 (Search):       {self.metrics['stage3_time_sec']:.2f} sec")
         print(f"Total Pipeline Time:    {self.metrics['total_time_sec']:.2f} sec")
         print(f"")
         print(f"Input Size:             {self.metrics['input_size_mb']:.2f} MB")
@@ -486,6 +490,78 @@ class MapReducePipelineRunner:
         print(f"MapReduce Config:")
         print(f"  Reducers:             {self.metrics['num_reducers']}")
         print("="*80)
+        
+    def ranking_search(self):
+        """Execute Stage 3: Ranking Search based on Similarity with MapReduce"""
+        print("\n" + "="*80)
+        print("STAGE 3: Ranking Search based on Similarity with MapReduce")
+        print("="*80)
+
+        ranking_search_script = os.path.join(self.script_dir, 'ranking_search.py')
+        try:
+            # Construct Hadoop streaming command
+            cmd = f"""hadoop jar {self.hadoop_streaming_jar} \\
+                -D mapreduce.job.name="Ranking_Search_Stage3" \\
+                -D mapreduce.job.reduces=1 \\
+                -files {ranking_search_script} \\
+                -mapper /bin/cat \\
+                -reducer "python3 {os.path.basename(ranking_search_script)}" \\
+                -cmdenv options={self.mode} \\
+                -input {self.stage2_output} \\
+                -output {self.ranking_search_output}"""
+
+            start_time = time.time()
+            result = self.run_command(cmd, "Running MapReduce Ranking Search similarity")
+            stage3_time = time.time() - start_time
+
+            if result is None:
+                raise Exception("Stage 2 (Pairwise) failed")
+
+            self.metrics['stage3_time_sec'] = round(stage3_time, 2)
+            print(f"[SUCCESS] Stage 3 completed in {stage3_time:.2f} seconds")
+        except Exception as e:
+            print(f"[ERROR] Ranking Search has error: {e}")
+            raise
+            
+        print("\n## 🏆 Top Ebooks Ranking 🏆", file=sys.stderr)
+        print("--------------------------------------------------------------------------------------", file=sys.stderr)
+        print("{:<5} | {:<20} | {:<10} | {:<10} | {:<10} | {:<12} ".format(
+        "Rank", "Ebook Name", "Jaccard", "F1-Score", "Overlap", "Shared Terms"
+        ), file=sys.stderr)
+        print("--------------------------------------------------------------------------------------", file=sys.stderr)
+        outputfile = "part-00000"
+        outputpath = os.path.join(self.ranking_search_output,outputfile) 
+        output_raw = subprocess.check_output(["hdfs", "dfs", "-cat", outputpath], text=True)
+        # Process and print each line of data
+        for line in output_raw.strip().split('\n'):
+            if not line:
+                continue
+            
+            # Assume values are delimited by a tab ('\t') or your chosen SEPARATOR
+            parts = line.split('\t') 
+
+            # Check if there are enough fields to avoid IndexError
+            if len(parts) >= 6:
+                # --- Apply Formatting and Type Conversion ---
+                # Note: Ensure fields 2 and 3 are converted to float for the .4f format
+                
+                rank = parts[0]
+                ebook_name = parts[1]
+                jaccard = float(parts[2])  # Assuming this field is a float
+                f1_score = float(parts[3]) # Assuming this field is a float
+                overlap = parts[4]
+                shared_terms = parts[5]
+
+                # Print the formatted data row
+                print("{:<5} | {:<20} | {:<10} | {:<10} | {:<10} | {:<12} ".format(
+                rank, ebook_name, jaccard, f1_score, overlap, shared_terms
+                ))
+            else:
+                # Handle cases where the data line is invalid
+                print(f"ERROR: Invalid data format in line: {line}", file=sys.stderr)
+        print("--------------------------------------------------------------------------------------", file=sys.stderr)
+        
+        
 
     def run(self):
         """Execute the complete MapReduce pipeline"""
@@ -506,15 +582,18 @@ class MapReducePipelineRunner:
                 self.run_jpii(query_content)
             elif self.mode == 'pairwise':
                 self.run_pairwise(query_content)
+                
+            #Raning search
+            self.ranking_search()
 
             # Calculate totals
             self.calculate_totals()
-
+            
             # Display summary
             self.display_summary()
 
             # Save metrics to CSV
-            self.save_metrics_to_csv()
+            #self.save_metrics_to_csv()
 
             print(f"\n[SUCCESS] Pipeline completed successfully!")
             print(f"[INFO] Results available at: {self.stage2_output}")
@@ -575,6 +654,8 @@ Examples:
                         help='HDFS output directory for inverted index (default: hdfs:///mapreduce-index-{num_books})')
     parser.add_argument('--stage2-output', type=str, default=None,
                         help='HDFS output directory for stage 2 results (default: hdfs:///mapreduce-{mode}-{num_books})')
+    parser.add_argument('--ranking-search-output', type=str, default=None,
+                        help='HDFS ranking search directory for stage 3 results (default: hdfs:///ranking-search-{args.mode}-{args.num_books})')
 
     # MapReduce configuration
     parser.add_argument('--num-reducers', type=int, default=None,
@@ -591,6 +672,8 @@ Examples:
         args.index_output = f"hdfs:///mapreduce-index-{args.num_books}"
     if args.stage2_output is None:
         args.stage2_output = f"hdfs:///mapreduce-{args.mode}-{args.num_books}"
+    if args.ranking_search_output is None:
+        args.ranking_search_output = f"hdfs:///ranking-search-{args.mode}-{args.num_books}"
 
     # Auto-scale reducers based on dataset size and 3-node cluster (12 vCPU total)
     if args.num_reducers is None:
