@@ -182,12 +182,19 @@ python3 run_mapreduce_pipeline.py \
 
 for size in 50 100 200; do
     python3 run_mapreduce_pipeline.py \
-    --mode pairwise \
+    --mode jpii \
     --num-books $size \
     --input-dir hdfs:///gutenberg-input-$size \
     --query-file /home/ktdl9/big-data-assignment/my_query.txt \
     --num-reducers 6
 done
+
+python3 run_mapreduce_pipeline.py \
+    --mode jpii \
+    --num-books 10 \
+    --input-dir hdfs:///gutenberg-input-10 \
+    --query-file /home/ktdl9/big-data-assignment/my_query.txt \
+    --num-reducers 6
 ```
 
 **Note**: The `--query-file` parameter is required for consistency but the query content is ignored by `pairwise_mapper.py`.

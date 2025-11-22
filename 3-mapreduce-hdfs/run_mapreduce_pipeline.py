@@ -382,7 +382,7 @@ class MapReducePipelineRunner:
 
         # Choose CSV file based on mode
         if self.mode == 'jpii':
-            csv_file = os.path.join(metrics_dir, 'mapreduce_jpii_metrics.csv')
+            csv_file = os.path.join(metrics_dir, 'latest_mapreduce_jpii_metrics.csv')
             fieldnames = [
                 'timestamp',
                 'mode',
@@ -406,7 +406,7 @@ class MapReducePipelineRunner:
             self.metrics['jpii_output'] = self.stage2_output
 
         elif self.mode == 'pairwise':
-            csv_file = os.path.join(metrics_dir, 'idf_mapreduce_pairwise_metrics.csv')
+            csv_file = os.path.join(metrics_dir, 'latest_mapreduce_pairwise_metrics.csv')
             fieldnames = [
                 'timestamp',
                 'mode',
@@ -593,7 +593,7 @@ class MapReducePipelineRunner:
             self.display_summary()
 
             # Save metrics to CSV
-            #self.save_metrics_to_csv()
+            self.save_metrics_to_csv()
 
             print(f"\n[SUCCESS] Pipeline completed successfully!")
             print(f"[INFO] Results available at: {self.stage2_output}")

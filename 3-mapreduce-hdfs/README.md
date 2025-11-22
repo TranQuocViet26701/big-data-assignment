@@ -229,6 +229,12 @@ for size in 10 50 100 200; do
         --query "science technology innovation"
 done
 
+
+python3 run_mapreduce_pipeline.py --mode jpii --num-books 10 \
+    --input-dir hdfs:///gutenberg-input-10 \
+    --query-file /home/ktdl9/big-data-assignment/my_query.txt \
+    --num-executors 6
+
 # View all metrics
 cat mapreduce_metrics.csv
 ```
