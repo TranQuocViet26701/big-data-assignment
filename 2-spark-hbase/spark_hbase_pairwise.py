@@ -18,6 +18,41 @@ Usage:
 from pyspark import SparkConf, SparkContext
 import sys
 import os
+import math
+
+# =============================
+NUM_PARTITIONS = 4         # depends on number of cores/executors
+IDF_LOW = 0.05
+IDF_HIGH = 0.95
+# =============================
+
+
+def read_term_docs_batch(terms, thrift_host, thrift_port):
+    """
+    Read term-document mappings from HBase for a batch of terms.
+
+    This runs on driver to collect all term-doc data for IDF computation.
+
+    Returns:
+        List of (term, {doc: count, ...}) tuples
+    """
+    import sys
+    sys.path.insert(0, '/tmp')  # For happybase/thrift on worker nodes
+    sys.path.append('/home/ktdl9/big-data-assignment/2-spark-hbase')
+    from hbase_connector import HBaseConnector
+
+    connector = HBaseConnector(host=thrift_host, port=thrift_port)
+    term_docs = []
+
+    try:
+        for term in terms:
+            docs = connector.read_inverted_index_term(term)
+            if docs:
+                term_docs.append((term, docs))
+        return term_docs
+    finally:
+        connector.close()
+
 
 def read_terms_partition(term_batch, thrift_host, thrift_port):
     """
@@ -26,6 +61,7 @@ def read_terms_partition(term_batch, thrift_host, thrift_port):
     This runs on Spark executors - each partition processes a batch of terms.
     """
     import sys
+    sys.path.insert(0, '/tmp')  # For happybase/thrift on worker nodes
     sys.path.append('/home/ktdl9/big-data-assignment/2-spark-hbase')
     from hbase_connector import HBaseConnector
 
@@ -48,8 +84,8 @@ def read_terms_partition(term_batch, thrift_host, thrift_port):
                     doc1, w1 = doc_list[i]
                     doc2, w2 = doc_list[j]
 
-                    # Create canonical key (larger word count first)
-                    if w1 > w2:
+                    # Create canonical key (lexicographic ordering)
+                    if doc1 <= doc2:
                         key = f"{doc1}-{doc2}@{w1}@{w2}"
                     else:
                         key = f"{doc2}-{doc1}@{w2}@{w1}"
@@ -60,6 +96,46 @@ def read_terms_partition(term_batch, thrift_host, thrift_port):
 
     finally:
         connector.close()
+
+
+def compute_term_idf(term_docs_list, total_docs):
+    """
+    Compute IDF for each term.
+
+    Args:
+        term_docs_list: List of (term, {doc: count, ...}) tuples
+        total_docs: Total number of unique documents
+
+    Returns:
+        Dictionary mapping term -> IDF value
+    """
+    term_idf = {}
+    for term, docs in term_docs_list:
+        df = len(docs)  # document frequency
+        idf = math.log(total_docs / df) / math.log(total_docs)
+        term_idf[term] = idf
+    return term_idf
+
+
+def filter_terms_by_idf(term_docs_list, term_idf, idf_low=0.05, idf_high=0.95):
+    """
+    Filter terms based on IDF thresholds.
+
+    Args:
+        term_docs_list: List of (term, {doc: count, ...}) tuples
+        term_idf: Dictionary mapping term -> IDF value
+        idf_low: Minimum IDF threshold
+        idf_high: Maximum IDF threshold
+
+    Returns:
+        Filtered list of (term, docs) tuples
+    """
+    filtered = []
+    for term, docs in term_docs_list:
+        idf = term_idf.get(term, 0)
+        if idf_low <= idf <= idf_high:
+            filtered.append((term, docs))
+    return filtered
 
 
 def compute_jaccard(pair_key_count):
@@ -77,7 +153,6 @@ def compute_jaccard(pair_key_count):
     try:
         # Parse: "doc1-doc2@w1@w2"
         pair_part, w1, w2 = pair_key.split('@')
-        doc1, doc2 = pair_part.split('-')
         w1, w2 = int(w1), int(w2)
 
         # Compute Jaccard similarity
@@ -105,6 +180,7 @@ def write_similarity_partition(partition, mode, thrift_host, thrift_port):
     This runs on Spark executors - each partition writes its data.
     """
     import sys
+    sys.path.insert(0, '/tmp')  # For happybase/thrift on worker nodes
     sys.path.append('/home/ktdl9/big-data-assignment/2-spark-hbase')
     from hbase_connector import HBaseConnector
 
@@ -150,9 +226,10 @@ def main():
     thrift_host = sys.argv[1]
     thrift_port = int(sys.argv[2])
 
-    print(f"\n[INFO] Starting Spark HBase Pairwise Similarity")
+    print(f"\n[INFO] Starting Spark HBase Pairwise Similarity with IDF Filtering")
     print(f"[INFO] HBase Thrift: {thrift_host}:{thrift_port}")
-    print(f"[INFO] Mode: Pairwise (all-pairs)\n")
+    print(f"[INFO] Mode: Pairwise (all-pairs)")
+    print(f"[INFO] IDF thresholds: {IDF_LOW} - {IDF_HIGH}\n")
 
     # Initialize Spark
     conf = SparkConf().setAppName("Spark-HBase-Pairwise")
@@ -176,9 +253,35 @@ def main():
             print("[WARNING] No terms found in index!")
             sys.exit(0)
 
-        # Distribute terms across Spark workers
-        num_slices = max(len(all_terms) // 10, sc.defaultParallelism * 4)
-        terms_rdd = sc.parallelize(all_terms, numSlices=num_slices)
+        # Read all term-document mappings for IDF computation
+        print(f"[INFO] Reading term-document mappings for IDF computation...")
+        term_docs_list = read_term_docs_batch(all_terms, thrift_host, thrift_port)
+
+        print(f"[INFO] Computing document count and IDF values...")
+        # Compute total unique documents
+        all_docs = set()
+        for _, docs in term_docs_list:
+            all_docs.update(docs.keys())
+        total_docs = len(all_docs)
+        print(f"[INFO] Total unique documents: {total_docs}")
+
+        # Compute IDF for each term
+        term_idf = compute_term_idf(term_docs_list, total_docs)
+
+        # Filter terms by IDF thresholds
+        print(f"[INFO] Filtering terms by IDF (threshold: {IDF_LOW} - {IDF_HIGH})...")
+        filtered_term_docs = filter_terms_by_idf(term_docs_list, term_idf, IDF_LOW, IDF_HIGH)
+        filtered_terms = [term for term, _ in filtered_term_docs]
+
+        print(f"[INFO] Terms after IDF filtering: {len(filtered_terms)} (filtered out {len(all_terms) - len(filtered_terms)})")
+
+        if not filtered_terms:
+            print("[WARNING] No terms passed IDF filtering!")
+            sys.exit(0)
+
+        # Distribute filtered terms across Spark workers
+        num_slices = max(len(filtered_terms) // 10, sc.defaultParallelism * 4)
+        terms_rdd = sc.parallelize(filtered_terms, numSlices=num_slices)
 
         print(f"[INFO] Processing terms in {num_slices} partitions...")
 

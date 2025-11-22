@@ -19,6 +19,10 @@ python3 run_spark_pipeline.py \
     --num-books 100 \
     --input-dir hdfs:///gutenberg-input-100 \
     --query "wildlife conservation hunting animals"
+
+    python3 run_spark_hbase_pipeline.py --mode jpii --num-books 10 \
+        --input-dir hdfs:///gutenberg-input-10 \
+        --query-file /home/ktdl9/big-data-assignment/my_query.txt
 ```
 
 ### Using Query File

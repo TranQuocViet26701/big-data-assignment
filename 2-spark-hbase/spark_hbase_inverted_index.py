@@ -143,6 +143,7 @@ def write_partition_to_hbase(partition, thrift_host, thrift_port):
         Number of records written (for counting)
     """
     import sys
+    sys.path.insert(0, '/tmp')  # For happybase/thrift on worker nodes
     sys.path.append('/home/ktdl9/big-data-assignment/2-spark-hbase')
 
     from hbase_connector import HBaseConnector

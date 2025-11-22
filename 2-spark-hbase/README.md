@@ -189,6 +189,37 @@ python3 run_spark_hbase_pipeline.py \
     --driver-memory 4G
 ```
 
+### Automated Benchmarking
+
+Run automated benchmarks across multiple dataset sizes:
+
+```bash
+# Run both modes on all default datasets (10, 50, 100, 200 books)
+./benchmark_spark_hbase_modes.sh --executors 6 --executor-memory 6G --datasets "10 50 100 200"
+
+# Run only JPII mode
+./benchmark_spark_hbase_modes.sh --mode jpii
+
+# Run pairwise on specific datasets
+./benchmark_spark_hbase_modes.sh --mode pairwise --datasets "10 50 100"
+
+./benchmark_spark_hbase_modes.sh --mode jpii --executors 6 --executor-memory 6G --datasets "10"
+
+# Custom configuration
+./benchmark_spark_hbase_modes.sh \
+    --mode both \
+    --datasets "10 50 100 200" \
+    --executors 6 \
+    --executor-memory 8G
+```
+
+The benchmark script:
+- Validates HBase connectivity and HDFS directories
+- Runs pipeline across multiple dataset sizes
+- Collects metrics for each run
+- Generates summary report with throughput statistics
+- Shows HBase table statistics after completion
+
 ## Scripts Reference
 
 ### Pipeline Scripts
@@ -209,6 +240,7 @@ python3 run_spark_hbase_pipeline.py \
 | `create_hbase_tables.sh` | Create HBase tables with schema |
 | `clear_hbase_tables.sh` | Truncate HBase tables |
 | `check_hbase_status.sh` | Check HBase and Thrift server status |
+| `benchmark_spark_hbase_modes.sh` | Automated benchmarking across datasets |
 
 ## Metrics
 

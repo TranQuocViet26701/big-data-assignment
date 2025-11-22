@@ -54,6 +54,7 @@ def read_and_process_terms(term_batch, query_words, query_url, wq, thrift_host, 
     This runs on Spark executors - each partition processes a batch of terms.
     """
     import sys
+    sys.path.insert(0, '/tmp')  # For happybase/thrift on worker nodes
     sys.path.append('/home/ktdl9/big-data-assignment/2-spark-hbase')
     from hbase_connector import HBaseConnector
 
@@ -147,6 +148,7 @@ def write_similarity_partition(partition, mode, thrift_host, thrift_port):
     This runs on Spark executors - each partition writes its data.
     """
     import sys
+    sys.path.insert(0, '/tmp')  # For happybase/thrift on worker nodes
     sys.path.append('/home/ktdl9/big-data-assignment/2-spark-hbase')
     from hbase_connector import HBaseConnector
 
@@ -223,8 +225,7 @@ def main():
         # We need to do this from driver to get the full term list
         print(f"[INFO] Reading terms from HBase...")
 
-        import sys as driver_sys
-        driver_sys.path.append('/home/ktdl9/big-data-assignment/2-spark-hbase')
+        # Import HBaseConnector (already available in driver)
         from hbase_connector import HBaseConnector
 
         connector = HBaseConnector(host=thrift_host, port=thrift_port)

@@ -163,18 +163,27 @@ class SparkHBasePipelineRunner:
         print("="*80)
 
         spark_script = os.path.join(self.script_dir, 'spark_hbase_inverted_index.py')
+        hbase_connector = os.path.join(self.script_dir, 'hbase_connector.py')
+        happybase_deps = os.path.join(self.script_dir, 'happybase_deps.zip')
 
-        # Construct spark-submit command
+        # Use hadoop-master for Thrift host to ensure worker nodes can connect
+        thrift_host = 'hadoop-master' if self.args.thrift_host == 'localhost' else self.args.thrift_host
+
+        # Construct spark-submit command - use client mode with py-files and archives
         cmd = f"""spark-submit \\
             --master yarn \\
-            --deploy-mode cluster \\
+            --deploy-mode client \\
             --num-executors {self.args.num_executors} \\
             --executor-memory {self.args.executor_memory} \\
             --driver-memory {self.args.driver_memory} \\
             --conf spark.dynamicAllocation.enabled=false \\
+            --conf spark.yarn.appMasterEnv.PYTHONPATH=happybase_deps.zip \\
+            --conf spark.executorEnv.PYTHONPATH=happybase_deps.zip \\
+            --py-files {hbase_connector} \\
+            --archives {happybase_deps}#happybase_deps.zip \\
             {spark_script} \\
             {self.args.input_dir} \\
-            {self.args.thrift_host} \\
+            {thrift_host} \\
             {self.args.thrift_port}"""
 
         start_time = time.time()
@@ -199,8 +208,13 @@ class SparkHBasePipelineRunner:
         print("="*80)
 
         spark_script = os.path.join(self.script_dir, 'spark_hbase_jpii.py')
+        hbase_connector = os.path.join(self.script_dir, 'hbase_connector.py')
+        happybase_deps = os.path.join(self.script_dir, 'happybase_deps.zip')
 
-        # Construct spark-submit command
+        # Use hadoop-master for Thrift host to ensure worker nodes can connect
+        thrift_host = 'hadoop-master' if self.args.thrift_host == 'localhost' else self.args.thrift_host
+
+        # Construct spark-submit command - use client mode with py-files and archives
         cmd = f"""spark-submit \\
             --master yarn \\
             --deploy-mode client \\
@@ -208,9 +222,13 @@ class SparkHBasePipelineRunner:
             --executor-memory {self.args.executor_memory} \\
             --driver-memory {self.args.driver_memory} \\
             --conf spark.dynamicAllocation.enabled=false \\
+            --conf spark.yarn.appMasterEnv.PYTHONPATH=happybase_deps.zip \\
+            --conf spark.executorEnv.PYTHONPATH=happybase_deps.zip \\
+            --py-files {hbase_connector} \\
+            --archives {happybase_deps}#happybase_deps.zip \\
             {spark_script} \\
             {query_file} \\
-            {self.args.thrift_host} \\
+            {thrift_host} \\
             {self.args.thrift_port}"""
 
         start_time = time.time()
@@ -233,17 +251,26 @@ class SparkHBasePipelineRunner:
         print("="*80)
 
         spark_script = os.path.join(self.script_dir, 'spark_hbase_pairwise.py')
+        hbase_connector = os.path.join(self.script_dir, 'hbase_connector.py')
+        happybase_deps = os.path.join(self.script_dir, 'happybase_deps.zip')
 
-        # Construct spark-submit command
+        # Use hadoop-master for Thrift host to ensure worker nodes can connect
+        thrift_host = 'hadoop-master' if self.args.thrift_host == 'localhost' else self.args.thrift_host
+
+        # Construct spark-submit command - use client mode with py-files and archives
         cmd = f"""spark-submit \\
             --master yarn \\
-            --deploy-mode cluster \\
+            --deploy-mode client \\
             --num-executors {self.args.num_executors} \\
             --executor-memory {self.args.executor_memory} \\
             --driver-memory {self.args.driver_memory} \\
             --conf spark.dynamicAllocation.enabled=false \\
+            --conf spark.yarn.appMasterEnv.PYTHONPATH=happybase_deps.zip \\
+            --conf spark.executorEnv.PYTHONPATH=happybase_deps.zip \\
+            --py-files {hbase_connector} \\
+            --archives {happybase_deps}#happybase_deps.zip \\
             {spark_script} \\
-            {self.args.thrift_host} \\
+            {thrift_host} \\
             {self.args.thrift_port}"""
 
         start_time = time.time()
@@ -280,9 +307,12 @@ class SparkHBasePipelineRunner:
 
     def save_metrics_to_csv(self):
         """Save metrics to mode-specific CSV file"""
+        metrics_dir = os.path.join(self.script_dir, 'metrics')
+        os.makedirs(metrics_dir, exist_ok=True)
+
         # Choose CSV file based on mode
         if self.mode == 'jpii':
-            csv_file = os.path.join(self.script_dir, 'spark_hbase_jpii_metrics.csv')
+            csv_file = os.path.join(metrics_dir, 'spark_hbase_jpii_metrics.csv')
             fieldnames = [
                 'timestamp',
                 'mode',
@@ -304,7 +334,7 @@ class SparkHBasePipelineRunner:
             ]
 
         elif self.mode == 'pairwise':
-            csv_file = os.path.join(self.script_dir, 'spark_hbase_pairwise_metrics.csv')
+            csv_file = os.path.join(metrics_dir, 'spark_hbase_pairwise_metrics.csv')
             fieldnames = [
                 'timestamp',
                 'mode',

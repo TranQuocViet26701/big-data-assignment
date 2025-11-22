@@ -68,6 +68,14 @@ python3 run_spark_hbase_pipeline.py \
     --query-file my_query.txt \
     --thrift-host localhost \
     --thrift-port 9090
+
+python3 run_spark_hbase_pipeline.py \
+    --mode jpii \
+    --num-books 10 \
+    --input-dir hdfs:///gutenberg-input-10 \
+    --query-file /home/ktdl9/big-data-assignment/my_query.txt \
+    --thrift-host hadoop-master \
+    --thrift-port 9090
 ```
 
 #### 6. `query_similarity.py` - Real-time Queries

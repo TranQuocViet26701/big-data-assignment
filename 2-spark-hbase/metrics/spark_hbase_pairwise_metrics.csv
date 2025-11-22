@@ -1,0 +1,2 @@
+timestamp,mode,num_books,total_possible_pairs,stage1_time_sec,stage2_time_sec,total_time_sec,input_size_mb,unique_terms,similarity_pairs,throughput_books_per_sec,throughput_pairs_per_sec,num_executors,executor_memory,driver_memory,thrift_host,thrift_port,input_dir
+2025-11-22 09:10:04,pairwise,10,45,52.08,1979.09,2031.17,3.67,101397,20100,0.0049,10.16,6,6G,2G,hadoop-master,9090,hdfs:///gutenberg-input-10
