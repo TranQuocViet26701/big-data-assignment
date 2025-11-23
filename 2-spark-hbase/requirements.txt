@@ -1,0 +1,12 @@
+# Python dependencies for Spark-HBase pipeline
+# Install with: pip3 install -r requirements.txt
+
+# HBase connectivity via Thrift
+happybase>=1.2.0
+
+# Thrift library (required by HappyBase)
+thrift>=0.13.0
+
+# Apache Spark (for local development/testing)
+# Note: On production clusters, use the cluster's Spark installation
+pyspark>=3.0.0

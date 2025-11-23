@@ -1,0 +1,9 @@
+timestamp,mode,num_books,stage1_time_sec,stage2_time_sec,stage3_time_sec,total_time_sec,input_size_mb,index_size_mb,output_size_mb,unique_words,similarity_pairs,throughput_books_per_sec,num_executors,executor_memory,driver_memory,input_dir,index_output,jpii_output
+2025-11-22 10:28:11,jpii,10,41.62,42.63,42.81,127.06,3.67,0.59,0.0,9755,10,0.0787,6,4G,2G,hdfs:///gutenberg-input-10,hdfs:///spark-index-10_20251122_102811,hdfs:///spark-jpii-10_20251122_102811
+2025-11-22 10:30:38,jpii,50,50.86,42.73,35.81,129.4,20.45,4.3,0.0,36255,50,0.3864,6,4G,2G,hdfs:///gutenberg-input-50,hdfs:///spark-index-50_20251122_103038,hdfs:///spark-jpii-50_20251122_103038
+2025-11-22 10:33:09,jpii,100,54.65,49.2,39.56,143.41,38.69,9.46,0.01,63495,100,0.6973,6,4G,2G,hdfs:///gutenberg-input-100,hdfs:///spark-index-100_20251122_103309,hdfs:///spark-jpii-100_20251122_103309
+2025-11-22 10:35:56,jpii,200,60.97,45.31,38.89,145.17,61.92,16.86,0.01,101397,200,1.3777,6,4G,2G,hdfs:///gutenberg-input-200,hdfs:///spark-index-200_20251122_103556,hdfs:///spark-jpii-200_20251122_103556
+2025-11-23 05:54:10,jpii,10,42.33,40.38,33.49,116.2,3.67,0.59,0.0,9755,10,0.0861,6,4G,2G,hdfs:///gutenberg-input-10,hdfs:///spark-index-10_20251123_055410,hdfs:///spark-jpii-10_20251123_055410
+2025-11-23 05:57:38,jpii,50,46.84,40.35,33.62,120.81,20.45,4.3,0.0,36255,50,0.4139,6,4G,2G,hdfs:///gutenberg-input-50,hdfs:///spark-index-50_20251123_055738,hdfs:///spark-jpii-50_20251123_055738
+2025-11-23 06:00:34,jpii,100,55.67,40.64,34.36,130.67,38.69,9.46,0.01,63495,100,0.7653,6,4G,2G,hdfs:///gutenberg-input-100,hdfs:///spark-index-100_20251123_060034,hdfs:///spark-jpii-100_20251123_060034
+2025-11-23 06:03:52,jpii,200,62.03,44.18,38.08,144.29,61.92,16.86,0.01,101397,200,1.3861,6,4G,2G,hdfs:///gutenberg-input-200,hdfs:///spark-index-200_20251123_060352,hdfs:///spark-jpii-200_20251123_060352
