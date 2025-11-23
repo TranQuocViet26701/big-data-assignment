@@ -343,6 +343,45 @@ class HBaseConnector:
             logger.error(f"Error truncating table: {e}")
             raise
 
+    def get_all_term_docs(self) -> List[Tuple[str, Dict[str, int]]]:
+        """
+        Read ALL term-document mappings from inverted_index table.
+
+        This is more efficient than calling get_all_terms() + read_inverted_index_term()
+        for each term separately.
+
+        Returns:
+            List of (term, {doc: count, ...}) tuples
+
+        Schema:
+            Row Key: term
+            Columns: docs:<document_name> -> word_count
+        """
+        try:
+            table = self.connection.table('inverted_index')
+            term_docs_list = []
+
+            # Scan entire table
+            for key, data in table.scan():
+                term = key.decode('utf-8')
+
+                # Parse columns: {b'docs:book1.txt': b'123', b'docs:book2.txt': b'456', ...}
+                docs = {}
+                for col_name, value in data.items():
+                    # Extract document name from column qualifier
+                    doc_name = col_name.decode('utf-8').replace('docs:', '')
+                    word_count = int(value.decode('utf-8'))
+                    docs[doc_name] = word_count
+
+                if docs:
+                    term_docs_list.append((term, docs))
+
+            logger.info(f"Loaded {len(term_docs_list)} terms from inverted_index")
+            return term_docs_list
+
+        except Exception as e:
+            logger.error(f"Failed to get all term-docs: {e}")
+            return []
 
 def test_connection(host: str = 'localhost', port: int = 9090) -> bool:
     """
