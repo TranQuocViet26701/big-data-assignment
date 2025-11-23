@@ -194,12 +194,12 @@ python3 run_spark_hbase_pipeline.py \
     --num-executors 6
 
 python3 run_spark_hbase_pipeline.py \
-    --mode jpii \
+    --mode pairwise \
     --num-books 10 \
     --input-dir hdfs:///gutenberg-input-10 \
-    --thrift-host hadoop-master \
     --query-file /home/ktdl9/big-data-assignment/my_query.txt \
     --num-executors 6 \
+    --thrift-host hadoop-master \
     --thrift-port 9090
 
 
