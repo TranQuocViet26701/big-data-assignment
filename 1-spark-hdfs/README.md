@@ -16,9 +16,9 @@ This directory contains Spark-based implementations of the inverted index and do
 ```bash
 # Run with 100 books using query string
 python3 run_spark_pipeline.py \
-    --num-books 100 \
-    --input-dir hdfs:///gutenberg-input-100 \
-    --query "wildlife conservation hunting animals"
+    --num-books 10 \
+    --input-dir hdfs:///gutenberg-input-10 \
+    --query-file /home/ktdl9/big-data-assignment/my_query.txt
 
     python3 run_spark_hbase_pipeline.py --mode jpii --num-books 10 \
         --input-dir hdfs:///gutenberg-input-10 \
@@ -197,8 +197,8 @@ for size in 10 50 100 200; do
         --query "science technology innovation"
 done
 
-python3 run_spark_pipeline.py --mode pairwise --num-books 100 \
-    --input-dir hdfs:///gutenberg-input-100 \
+python3 run_spark_pipeline.py --mode jpii --num-books 10 \
+    --input-dir hdfs:///gutenberg-input-10 \
     --query-file /home/ktdl9/big-data-assignment/my_query.txt \
     --num-executors 6
 

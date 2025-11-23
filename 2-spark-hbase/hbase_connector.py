@@ -156,6 +156,48 @@ class HBaseConnector:
             logger.error(f"Error reading term '{term}': {e}")
             return {}
 
+    def bulk_read_inverted_index_terms(self, terms: List[str]) -> Dict[str, Dict[str, int]]:
+        """
+        Bulk read multiple terms from inverted_index in a single batch.
+
+        OPTIMIZATION: Use HBase batch API to reduce round trips.
+
+        Args:
+            terms: List of terms to look up
+
+        Returns:
+            Dictionary mapping terms to their document dictionaries
+            Example: {'term1': {'book1.txt': 123}, 'term2': {'book2.txt': 456}}
+        """
+        if not terms:
+            return {}
+
+        table = self.connection.table('inverted_index')
+        results = {}
+
+        try:
+            # Use batch get for efficient bulk read
+            row_keys = [term.encode('utf-8') for term in terms]
+            rows = table.rows(row_keys)
+
+            for term_bytes, row_data in rows:
+                term = term_bytes.decode('utf-8')
+                docs = {}
+
+                # Parse HBase row
+                for col_name, value in row_data.items():
+                    doc_name = col_name.decode('utf-8').replace('docs:', '')
+                    word_count = int(value.decode('utf-8'))
+                    docs[doc_name] = word_count
+
+                results[term] = docs
+
+            return results
+
+        except Exception as e:
+            logger.error(f"Error reading term '{term}': {e}")
+            return {}
+
     def scan_inverted_index(
         self,
         limit: Optional[int] = None,

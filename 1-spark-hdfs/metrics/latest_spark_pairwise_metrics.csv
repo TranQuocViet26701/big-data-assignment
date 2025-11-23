@@ -8,3 +8,4 @@ timestamp,mode,num_books,total_possible_pairs,stage1_time_sec,stage2_time_sec,st
 2025-11-22 17:36:52,pairwise,50,1225,48.93,44.84,35.27,129.04,20.45,4.3,0.06,36255,1225,1225,0.3875,27.32,6,4G,2G,hdfs:///gutenberg-input-50,hdfs:///spark-index-50_20251122_173652,hdfs:///spark-pairwise-50_20251122_173652
 2025-11-22 17:40:14,pairwise,100,4950,50.1,56.42,37.08,143.6,38.69,9.46,0.26,63495,4950,4950,0.6964,87.73,6,4G,2G,hdfs:///gutenberg-input-100,hdfs:///spark-index-100_20251122_174014,hdfs:///spark-pairwise-100_20251122_174014
 2025-11-22 17:43:57,pairwise,200,19900,58.05,71.0,33.62,162.67,61.92,16.86,1.03,101397,19900,19900,1.2295,280.28,6,4G,2G,hdfs:///gutenberg-input-200,hdfs:///spark-index-200_20251122_174357,hdfs:///spark-pairwise-200_20251122_174357
+2025-11-23 13:06:21,pairwise,10,45,53.82,45.48,42.39,141.69,3.67,0.59,0.0,9755,45,45,0.0706,0.99,6,4G,2G,hdfs:///gutenberg-input-10,hdfs:///spark-index-10_20251123_130621,hdfs:///spark-pairwise-10_20251123_130621

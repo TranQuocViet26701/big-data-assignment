@@ -9,3 +9,4 @@ timestamp,mode,num_books,stage1_time_sec,stage2_time_sec,stage3_time_sec,total_t
 2025-11-23 05:35:17,jpii,50,71.36,35.21,31.68,138.25,20.45,4.33,0.0,36293,50,0.3617,6,hdfs:///gutenberg-input-50,hdfs:///mapreduce-index-50_20251123_053517,hdfs:///mapreduce-jpii-50_20251123_053517
 2025-11-23 05:42:37,jpii,100,102.52,34.64,31.98,169.14,38.69,9.47,0.01,63498,100,0.5912,6,hdfs:///gutenberg-input-100,hdfs:///mapreduce-index-100_20251123_054237,hdfs:///mapreduce-jpii-100_20251123_054237
 2025-11-23 05:47:00,jpii,200,171.69,36.8,29.81,238.3,61.92,16.86,0.01,101397,200,0.8393,6,hdfs:///gutenberg-input-200,hdfs:///mapreduce-index-200_20251123_054700,hdfs:///mapreduce-jpii-200_20251123_054700
+2025-11-23 13:23:32,jpii,10,48.17,36.04,27.48,111.69,3.67,0.63,0.0,10027,10,0.0895,6,hdfs:///gutenberg-input-10,hdfs:///mapreduce-index-10_20251123_132332,hdfs:///mapreduce-jpii-10_20251123_132332

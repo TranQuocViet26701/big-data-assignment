@@ -1,16 +1,27 @@
 #!/usr/bin/env python3
 """
-Spark HBase JPII (Query-based Similarity)
+Spark HBase JPII (Query-based Similarity) - Optimized for 6 Executors × 6GB
 
 Reads inverted index from HBase and computes document similarity
 using JPII (Jaccard Pairwise Index of Inverted Index) algorithm.
 Writes results to HBase similarity_scores table.
 
+OPTIMIZATIONS:
+- Adaptive partitioning based on executor count
+- HBase connection retry logic
+- Memory-safe batch processing for high-frequency terms
+- Optimized write batching for concurrent executors
+- Bulk IDF filtering with caching
+
 Usage:
     spark-submit \\
         --master yarn \\
         --deploy-mode client \\
-        --num-executors 4 \\
+        --num-executors 6 \\
+        --executor-cores 4 \\
+        --executor-memory 6G \\
+        --conf spark.executor.memoryOverhead=1G \\
+        --conf spark.default.parallelism=48 \\
         spark_hbase_jpii.py \\
         <query_file> <thrift_host> <thrift_port>
 """
@@ -20,6 +31,7 @@ import sys
 import re
 import os
 import math
+import time
 
 # Configuration
 HBASE_CONNECTOR_PATH = os.getenv(
@@ -30,6 +42,12 @@ HBASE_CONNECTOR_PATH = os.getenv(
 # IDF Filtering Configuration
 IDF_LOW = 0.05
 IDF_HIGH = 0.95
+
+# Performance Tuning Constants
+MAX_RETRIES = 3
+RETRY_DELAY = 2  # seconds
+WRITE_BATCH_SIZE = 500  # Reduced from 1000 for better concurrency with 6 executors
+MAX_DOCS_PER_TERM = 10000  # Memory safety: skip terms with too many documents
 
 # Stopwords
 stop_words = {
@@ -78,16 +96,33 @@ def read_and_process_terms(term_batch, query_words, query_url, wq, thrift_host, 
     """
     Read terms from HBase and generate document pairs for JPII.
 
+    OPTIMIZATIONS:
+    - Retry logic for HBase connection failures
+    - Memory-safe processing with document count limits
+    - Early termination for oversized terms
+
     This runs on Spark executors - each partition processes a batch of terms.
     """
     import sys
     import os
+    import time
     sys.path.insert(0, '/tmp')  # For happybase/thrift on worker nodes
     sys.path.append(connector_path)
     from hbase_connector import HBaseConnector
 
-    connector = HBaseConnector(host=thrift_host, port=thrift_port)
+    connector = None
     pairs = []
+
+    # Retry connection with exponential backoff
+    for attempt in range(MAX_RETRIES):
+        try:
+            connector = HBaseConnector(host=thrift_host, port=thrift_port)
+            break
+        except Exception as e:
+            if attempt == MAX_RETRIES - 1:
+                print(f"[ERROR] Failed to connect to HBase after {MAX_RETRIES} attempts: {e}", file=sys.stderr)
+                return []
+            time.sleep(RETRY_DELAY * (2 ** attempt))
 
     try:
         for term in term_batch:
@@ -95,10 +130,25 @@ def read_and_process_terms(term_batch, query_words, query_url, wq, thrift_host, 
             if term not in query_words:
                 continue
 
-            # Read documents for this term from HBase
-            docs = connector.read_inverted_index_term(term)
+            # Read documents for this term from HBase with retry
+            docs = None
+            for attempt in range(MAX_RETRIES):
+                try:
+                    docs = connector.read_inverted_index_term(term)
+                    break
+                except Exception as e:
+                    if attempt == MAX_RETRIES - 1:
+                        print(f"[ERROR] Failed to read term '{term}' after {MAX_RETRIES} attempts: {e}", file=sys.stderr)
+                        docs = None
+                    else:
+                        time.sleep(RETRY_DELAY)
 
             if not docs:
+                continue
+
+            # Memory safety: Skip terms with too many documents
+            if len(docs) > MAX_DOCS_PER_TERM:
+                print(f"[WARNING] Skipping term '{term}' with {len(docs)} documents (exceeds limit {MAX_DOCS_PER_TERM})", file=sys.stderr)
                 continue
 
             # Generate pairs: (query, document)
@@ -117,7 +167,11 @@ def read_and_process_terms(term_batch, query_words, query_url, wq, thrift_host, 
         return pairs
 
     finally:
-        connector.close()
+        if connector:
+            try:
+                connector.close()
+            except:
+                pass
 
 
 def compute_jaccard(pair_key_count, query_url):
@@ -173,17 +227,35 @@ def write_similarity_partition(partition, mode, thrift_host, thrift_port, connec
     """
     Write similarity results to HBase.
 
+    OPTIMIZATIONS:
+    - Reduced batch size (500) for better concurrency with 6 executors
+    - Retry logic for HBase write failures
+    - Graceful error handling with partial success
+
     This runs on Spark executors - each partition writes its data.
     """
     import sys
     import os
+    import time
     sys.path.insert(0, '/tmp')  # For happybase/thrift on worker nodes
     sys.path.append(connector_path)
     from hbase_connector import HBaseConnector
 
-    connector = HBaseConnector(host=thrift_host, port=thrift_port)
+    connector = None
     batch = []
     total_written = 0
+
+    # Retry connection with exponential backoff
+    for attempt in range(MAX_RETRIES):
+        try:
+            connector = HBaseConnector(host=thrift_host, port=thrift_port)
+            break
+        except Exception as e:
+            if attempt == MAX_RETRIES - 1:
+                print(f"[ERROR] Failed to connect to HBase for writing after {MAX_RETRIES} attempts: {e}", file=sys.stderr)
+                yield 0
+                return
+            time.sleep(RETRY_DELAY * (2 ** attempt))
 
     try:
         for record in partition:
@@ -192,25 +264,47 @@ def write_similarity_partition(partition, mode, thrift_host, thrift_port, connec
 
             batch.append(record)
 
-            # Write in batches of 1000
-            if len(batch) >= 1000:
-                connector.batch_write_similarity(batch, mode)
-                total_written += len(batch)
-                batch = []
+            # Write in batches of 500 (reduced for better concurrency)
+            if len(batch) >= WRITE_BATCH_SIZE:
+                # Retry batch write
+                for attempt in range(MAX_RETRIES):
+                    try:
+                        connector.batch_write_similarity(batch, mode)
+                        total_written += len(batch)
+                        batch = []
+                        break
+                    except Exception as e:
+                        if attempt == MAX_RETRIES - 1:
+                            print(f"[ERROR] Failed to write batch after {MAX_RETRIES} attempts: {e}", file=sys.stderr)
+                            batch = []  # Drop failed batch to continue
+                        else:
+                            time.sleep(RETRY_DELAY)
 
-        # Write remaining
+        # Write remaining with retry
         if batch:
-            connector.batch_write_similarity(batch, mode)
-            total_written += len(batch)
+            for attempt in range(MAX_RETRIES):
+                try:
+                    connector.batch_write_similarity(batch, mode)
+                    total_written += len(batch)
+                    break
+                except Exception as e:
+                    if attempt == MAX_RETRIES - 1:
+                        print(f"[ERROR] Failed to write final batch after {MAX_RETRIES} attempts: {e}", file=sys.stderr)
+                    else:
+                        time.sleep(RETRY_DELAY)
 
         yield total_written
 
     except Exception as e:
         print(f"[ERROR] Failed to write similarity: {e}", file=sys.stderr)
-        yield 0
+        yield total_written  # Return partial success
 
     finally:
-        connector.close()
+        if connector:
+            try:
+                connector.close()
+            except:
+                pass
 
 
 def main():
@@ -255,25 +349,25 @@ def main():
     total_docs = None
     term_stats = []
 
+    # ✅ BULK READ OPTIMIZATION: Read all terms at once instead of one-by-one
+    print(f"[INFO] Bulk reading {len(query_words)} query terms from HBase...")
+    term_to_docs = connector.bulk_read_inverted_index_terms(list(query_words))
+
+    # Estimate total document count from sample
+    all_docs = set()
+    sample_size = min(10, len(term_to_docs))
+    for term, docs in list(term_to_docs.items())[:sample_size]:
+        if docs:
+            all_docs.update(docs.keys())
+    total_docs = len(all_docs) if all_docs else 1  # Avoid division by zero
+
+    print(f"[INFO] Estimated total documents: {total_docs}")
+
+    # Compute IDF for each term and filter
     for term in query_words:
-        docs = connector.read_inverted_index_term(term)
+        docs = term_to_docs.get(term, {})
         if docs:
             doc_freq = len(docs)
-
-            # Get total docs count on first iteration
-            if total_docs is None:
-                # Estimate from index (alternatively, could be passed as parameter)
-                # For now, we'll collect this from the first term's posting list
-                # A better approach would be to store this as metadata
-                all_docs = set()
-                # Sample a few terms to estimate total docs
-                sample_size = min(10, len(query_words))
-                for sample_term in list(query_words)[:sample_size]:
-                    sample_docs = connector.read_inverted_index_term(sample_term)
-                    if sample_docs:
-                        all_docs.update(sample_docs.keys())
-                total_docs = max(len(all_docs), doc_freq)  # Use max to avoid division issues
-
             idf = compute_idf(doc_freq, total_docs)
             term_stats.append((term, doc_freq, idf))
 
@@ -299,8 +393,25 @@ def main():
     query_words = filtered_query_words
     wq = len(query_words)
 
-    # Initialize Spark
+    # Initialize Spark with optimized configuration for 6 executors × 6GB
     conf = SparkConf().setAppName("Spark-HBase-JPII-Optimized")
+
+    # Set optimal parallelism (6 executors × 4 cores × 2 = 48 tasks)
+    conf.set("spark.default.parallelism", "48")
+
+    # Memory management for 6GB executors
+    conf.set("spark.memory.fraction", "0.8")  # 80% for execution/storage
+    conf.set("spark.memory.storageFraction", "0.3")  # 30% of memory for caching
+
+    # Shuffle optimization
+    conf.set("spark.sql.shuffle.partitions", "48")
+    conf.set("spark.shuffle.compress", "true")
+    conf.set("spark.shuffle.spill.compress", "true")
+
+    # Network timeout for HBase operations
+    conf.set("spark.network.timeout", "600s")
+    conf.set("spark.executor.heartbeatInterval", "60s")
+
     sc = SparkContext(conf=conf)
 
     try:
@@ -318,11 +429,18 @@ def main():
         wq_bc = sc.broadcast(wq)
 
         # Distribute terms across Spark workers
-        # More partitions = better parallelism for HBase queries
-        num_slices = max(len(relevant_terms) // 5, sc.defaultParallelism * 4)
+        # Optimize partitioning for 6 executors × 4 cores = 24 total cores
+        # Use 2x cores for better parallelism (48 partitions)
+        # Ensure at least 5 terms per partition to reduce overhead
+        optimal_partitions = 48
+        min_terms_per_partition = 5
+        max_partitions = max(len(relevant_terms) // min_terms_per_partition, 1)
+        num_slices = min(optimal_partitions, max_partitions)
+
         terms_rdd = sc.parallelize(relevant_terms, numSlices=num_slices)
 
         print(f"[INFO] Processing {len(relevant_terms)} terms in {num_slices} partitions...")
+        print(f"[INFO] Avg terms per partition: {len(relevant_terms) / num_slices:.1f}")
 
         # Read from HBase and generate pairs (parallel)
         pairs_rdd = terms_rdd.mapPartitions(
@@ -340,15 +458,20 @@ def main():
         # Reduce by key to count intersections
         similarity_counts = pairs_rdd.reduceByKey(lambda a, b: a + b)
 
+        # ✅ CACHE OPTIMIZATION: Cache intermediate results to avoid recomputation
+        # With 6GB per executor, we have ~36GB total memory available for caching
+        similarity_counts.cache()
+        print(f"[INFO] Cached similarity counts to memory")
+
         # Compute Jaccard similarity
         similarity_results = similarity_counts.map(
             lambda kv: compute_jaccard(kv, query_url_bc.value)
         ).filter(lambda x: x is not None)
 
-        # Cache results for multiple operations
+        # Cache final results for write operation
         similarity_results.cache()
 
-        # Count results
+        # Count results (triggers caching)
         num_pairs = similarity_results.count()
         print(f"[INFO] Document pairs found: {num_pairs}")
 
@@ -371,10 +494,18 @@ def main():
         print(f"[INFO] Total records written: {total_written}")
         print(f"[INFO] Query document: {query_url}")
         print(f"[INFO] Terms processed (after IDF filtering): {len(relevant_terms)}")
-        print(f"\n[OPTIMIZATION] IDF filtering enabled (threshold: {IDF_LOW}-{IDF_HIGH})")
-        print(f"  ✅ Filtered out {len(term_stats) - len(filtered_query_words)} irrelevant terms")
-        print(f"  ✅ Reduced HBase queries by {((len(term_stats) - len(filtered_query_words)) / max(len(term_stats), 1) * 100):.1f}%")
-        print(f"  ✅ Improved result quality by removing too common/rare terms")
+        print(f"\n{'='*80}")
+        print("OPTIMIZATION SUMMARY (6 Executors × 6GB Configuration)")
+        print(f"{'='*80}")
+        print(f"✅ IDF Filtering: Filtered {len(term_stats) - len(filtered_query_words)} irrelevant terms ({((len(term_stats) - len(filtered_query_words)) / max(len(term_stats), 1) * 100):.1f}% reduction)")
+        print(f"✅ Bulk HBase Reads: Single batch request for {len(query_words)} terms")
+        print(f"✅ Adaptive Partitioning: {num_slices} partitions (~{len(relevant_terms) / num_slices:.1f} terms/partition)")
+        print(f"✅ Memory Safety: Max {MAX_DOCS_PER_TERM:,} docs per term")
+        print(f"✅ Write Batching: {WRITE_BATCH_SIZE} records per batch with retry")
+        print(f"✅ RDD Caching: Intermediate results cached for reuse")
+        print(f"✅ Spark Config: 48 tasks (6 executors × 4 cores × 2)")
+        print(f"✅ Connection Resilience: {MAX_RETRIES} retries with exponential backoff")
+        print(f"{'='*80}")
 
     except Exception as e:
         print(f"\n[ERROR] Pipeline failed: {e}", file=sys.stderr)

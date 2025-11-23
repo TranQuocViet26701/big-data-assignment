@@ -1,5 +1,5 @@
-timestamp,mode,num_books,stage1_time_sec,stage2_time_sec,total_time_sec,input_size_mb,unique_terms,similarity_pairs,throughput_books_per_sec,num_executors,executor_memory,driver_memory,thrift_host,thrift_port,input_dir,query_file
-2025-11-22 08:55:08,jpii,10,43.89,126.14,170.03,3.67,9755,12199,0.0588,6,6G,2G,hadoop-master,9090,hdfs:///gutenberg-input-10,my_query.txt
-2025-11-22 08:58:04,jpii,50,56.2,156.67,212.87,20.45,36255,12239,0.2349,6,6G,2G,hadoop-master,9090,hdfs:///gutenberg-input-50,my_query.txt
-2025-11-22 09:01:44,jpii,100,58.21,177.11,235.32,38.69,63495,12289,0.425,6,6G,2G,hadoop-master,9090,hdfs:///gutenberg-input-100,my_query.txt
-2025-11-22 09:05:48,jpii,200,63.24,180.73,243.97,61.92,101397,12389,0.8198,6,6G,2G,hadoop-master,9090,hdfs:///gutenberg-input-200,my_query.txt
+timestamp,mode,num_books,stage1_time_sec,stage2_time_sec,total_time_sec,input_size_mb,unique_terms,similarity_pairs,throughput_books_per_sec,num_executors,executor_memory,driver_memory,thrift_host,thrift_port,input_dir,query_file2025-11-23 14:13:29,jpii,10,52.16,68.8,120.96,3.67,101397,200,0.0827,6,6G,2G,hadoop-master,9090,hdfs:///gutenberg-input-10,my_query.txt
+2025-11-23 14:24:46,jpii,10,52.87,88.51,141.38,3.67,101397,200,0.0707,6,6G,2G,hadoop-master,9090,hdfs:///gutenberg-input-10,my_query.txt
+2025-11-23 14:15:41,jpii,50,62.84,70.05,132.89,20.45,101397,200,0.3763,6,6G,2G,hadoop-master,9090,hdfs:///gutenberg-input-50,my_query.txt
+2025-11-23 14:18:04,jpii,100,67.16,73.35,140.51,38.69,101397,200,0.7117,6,6G,2G,hadoop-master,9090,hdfs:///gutenberg-input-100,my_query.txt
+2025-11-23 14:20:37,jpii,200,69.07,73.04,142.11,61.92,101397,200,1.4074,6,6G,2G,hadoop-master,9090,hdfs:///gutenberg-input-200,my_query.txt

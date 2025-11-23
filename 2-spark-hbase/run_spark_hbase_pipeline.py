@@ -170,13 +170,24 @@ class SparkHBasePipelineRunner:
         thrift_host = 'hadoop-master' if self.args.thrift_host == 'localhost' else self.args.thrift_host
 
         # Construct spark-submit command - use client mode with py-files and archives
+        # Include optimizations for 6 executors × 6GB configuration
         cmd = f"""spark-submit \\
             --master yarn \\
             --deploy-mode client \\
             --num-executors {self.args.num_executors} \\
+            --executor-cores {self.args.executor_cores} \\
             --executor-memory {self.args.executor_memory} \\
             --driver-memory {self.args.driver_memory} \\
             --conf spark.dynamicAllocation.enabled=false \\
+            --conf spark.executor.memoryOverhead={self.args.memory_overhead} \\
+            --conf spark.default.parallelism={self.args.default_parallelism} \\
+            --conf spark.sql.shuffle.partitions={self.args.shuffle_partitions} \\
+            --conf spark.memory.fraction=0.8 \\
+            --conf spark.memory.storageFraction=0.3 \\
+            --conf spark.shuffle.compress=true \\
+            --conf spark.shuffle.spill.compress=true \\
+            --conf spark.network.timeout=600s \\
+            --conf spark.executor.heartbeatInterval=60s \\
             --conf spark.yarn.appMasterEnv.PYTHONPATH=happybase_deps.zip \\
             --conf spark.executorEnv.PYTHONPATH=happybase_deps.zip \\
             --py-files {hbase_connector} \\
@@ -215,13 +226,24 @@ class SparkHBasePipelineRunner:
         thrift_host = 'hadoop-master' if self.args.thrift_host == 'localhost' else self.args.thrift_host
 
         # Construct spark-submit command - use client mode with py-files and archives
+        # Include optimizations for 6 executors × 6GB configuration
         cmd = f"""spark-submit \\
             --master yarn \\
             --deploy-mode client \\
             --num-executors {self.args.num_executors} \\
+            --executor-cores {self.args.executor_cores} \\
             --executor-memory {self.args.executor_memory} \\
             --driver-memory {self.args.driver_memory} \\
             --conf spark.dynamicAllocation.enabled=false \\
+            --conf spark.executor.memoryOverhead={self.args.memory_overhead} \\
+            --conf spark.default.parallelism={self.args.default_parallelism} \\
+            --conf spark.sql.shuffle.partitions={self.args.shuffle_partitions} \\
+            --conf spark.memory.fraction=0.8 \\
+            --conf spark.memory.storageFraction=0.3 \\
+            --conf spark.shuffle.compress=true \\
+            --conf spark.shuffle.spill.compress=true \\
+            --conf spark.network.timeout=600s \\
+            --conf spark.executor.heartbeatInterval=60s \\
             --conf spark.yarn.appMasterEnv.PYTHONPATH=happybase_deps.zip \\
             --conf spark.executorEnv.PYTHONPATH=happybase_deps.zip \\
             --py-files {hbase_connector} \\
@@ -258,13 +280,24 @@ class SparkHBasePipelineRunner:
         thrift_host = 'hadoop-master' if self.args.thrift_host == 'localhost' else self.args.thrift_host
 
         # Construct spark-submit command - use client mode with py-files and archives
+        # Include optimizations for 6 executors × 6GB configuration
         cmd = f"""spark-submit \\
             --master yarn \\
             --deploy-mode client \\
             --num-executors {self.args.num_executors} \\
+            --executor-cores {self.args.executor_cores} \\
             --executor-memory {self.args.executor_memory} \\
             --driver-memory {self.args.driver_memory} \\
             --conf spark.dynamicAllocation.enabled=false \\
+            --conf spark.executor.memoryOverhead={self.args.memory_overhead} \\
+            --conf spark.default.parallelism={self.args.default_parallelism} \\
+            --conf spark.sql.shuffle.partitions={self.args.shuffle_partitions} \\
+            --conf spark.memory.fraction=0.8 \\
+            --conf spark.memory.storageFraction=0.3 \\
+            --conf spark.shuffle.compress=true \\
+            --conf spark.shuffle.spill.compress=true \\
+            --conf spark.network.timeout=600s \\
+            --conf spark.executor.heartbeatInterval=60s \\
             --conf spark.yarn.appMasterEnv.PYTHONPATH=happybase_deps.zip \\
             --conf spark.executorEnv.PYTHONPATH=happybase_deps.zip \\
             --py-files {hbase_connector} \\
@@ -513,12 +546,20 @@ Examples:
                         help='Path to local file containing query text (required for JPII mode)')
 
     # Spark configuration
-    parser.add_argument('--num-executors', type=int, default=4,
-                        help='Number of Spark executors (default: 4)')
-    parser.add_argument('--executor-memory', type=str, default='4G',
-                        help='Memory per executor (default: 4G)')
+    parser.add_argument('--num-executors', type=int, default=6,
+                        help='Number of Spark executors (default: 6, optimized for 6x6GB)')
+    parser.add_argument('--executor-cores', type=int, default=4,
+                        help='Number of cores per executor (default: 4)')
+    parser.add_argument('--executor-memory', type=str, default='6G',
+                        help='Memory per executor (default: 6G)')
     parser.add_argument('--driver-memory', type=str, default='2G',
                         help='Driver memory (default: 2G)')
+    parser.add_argument('--memory-overhead', type=str, default='1G',
+                        help='Executor memory overhead (default: 1G)')
+    parser.add_argument('--default-parallelism', type=int, default=48,
+                        help='Default parallelism (default: 48 = 6 executors × 4 cores × 2)')
+    parser.add_argument('--shuffle-partitions', type=int, default=48,
+                        help='Shuffle partitions (default: 48)')
 
     args = parser.parse_args()
 
