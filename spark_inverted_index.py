@@ -116,7 +116,11 @@ if __name__ == "__main__":
     mapped = rdd.flatMap(mapper_phase1).sortByKey()
 
     # Group by term
-    grouped = mapped.groupByKey().mapValues(list)
+    # grouped = mapped.groupByKey().mapValues(list)  # cũ
+    # Change to reduceByKey
+    # mapped: RDD(term, "filename@W")
+    postings_list = mapped.map(lambda kv: (kv[0], [kv[1]]))  # wrap value thành list
+    grouped = postings_list.reduceByKey(lambda a, b: a + b)   # merge lists
 
     # Apply reducer logic
     reduced = grouped.map(lambda kv: reducer_phase1(kv[0], kv[1], total_docs_bc.value)) \
