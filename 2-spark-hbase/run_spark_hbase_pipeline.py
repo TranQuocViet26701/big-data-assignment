@@ -28,6 +28,8 @@ import time
 import csv
 import os
 import sys
+import re
+import mmh3
 from datetime import datetime
 
 
@@ -75,7 +77,14 @@ class SparkHBasePipelineRunner:
         except Exception as e:
             print(f"[ERROR] Command execution failed: {e}")
             return None
-
+            
+    def normalize_and_hash_query(self, query_content):
+        cleaned_content = query_content.lower().strip()
+        cleaned_content = re.sub(r'[\n\r\t]+', ' ', cleaned_content)
+        cleaned_content = re.sub(r' +', ' ', cleaned_content)
+        hash_value      = mmh3.hash128(cleaned_content, signed=False)
+        return format(hash_value, '032x')
+    
     def get_hdfs_size_mb(self, hdfs_path):
         """Get size of HDFS path in MB"""
         cmd = f"hdfs dfs -du -s {hdfs_path} 2>/dev/null | awk '{{print $1}}'"
@@ -163,38 +172,19 @@ class SparkHBasePipelineRunner:
         print("="*80)
 
         spark_script = os.path.join(self.script_dir, 'spark_hbase_inverted_index.py')
-        hbase_connector = os.path.join(self.script_dir, 'hbase_connector.py')
-        happybase_deps = os.path.join(self.script_dir, 'happybase_deps.zip')
 
-        # Use hadoop-master for Thrift host to ensure worker nodes can connect
-        thrift_host = 'hadoop-master' if self.args.thrift_host == 'localhost' else self.args.thrift_host
-
-        # Construct spark-submit command - use client mode with py-files and archives
-        # Include optimizations for 6 executors × 6GB configuration
+        # Construct spark-submit command
         cmd = f"""spark-submit \\
             --master yarn \\
-            --deploy-mode client \\
+            --deploy-mode cluster \\
             --num-executors {self.args.num_executors} \\
-            --executor-cores {self.args.executor_cores} \\
             --executor-memory {self.args.executor_memory} \\
             --driver-memory {self.args.driver_memory} \\
             --conf spark.dynamicAllocation.enabled=false \\
-            --conf spark.executor.memoryOverhead={self.args.memory_overhead} \\
-            --conf spark.default.parallelism={self.args.default_parallelism} \\
-            --conf spark.sql.shuffle.partitions={self.args.shuffle_partitions} \\
-            --conf spark.memory.fraction=0.8 \\
-            --conf spark.memory.storageFraction=0.3 \\
-            --conf spark.shuffle.compress=true \\
-            --conf spark.shuffle.spill.compress=true \\
-            --conf spark.network.timeout=600s \\
-            --conf spark.executor.heartbeatInterval=60s \\
-            --conf spark.yarn.appMasterEnv.PYTHONPATH=happybase_deps.zip \\
-            --conf spark.executorEnv.PYTHONPATH=happybase_deps.zip \\
-            --py-files {hbase_connector} \\
-            --archives {happybase_deps}#happybase_deps.zip \\
+            --py-files hbase_connector.py \\
             {spark_script} \\
             {self.args.input_dir} \\
-            {thrift_host} \\
+            {self.args.thrift_host} \\
             {self.args.thrift_port}"""
 
         start_time = time.time()
@@ -219,38 +209,19 @@ class SparkHBasePipelineRunner:
         print("="*80)
 
         spark_script = os.path.join(self.script_dir, 'spark_hbase_jpii.py')
-        hbase_connector = os.path.join(self.script_dir, 'hbase_connector.py')
-        happybase_deps = os.path.join(self.script_dir, 'happybase_deps.zip')
 
-        # Use hadoop-master for Thrift host to ensure worker nodes can connect
-        thrift_host = 'hadoop-master' if self.args.thrift_host == 'localhost' else self.args.thrift_host
-
-        # Construct spark-submit command - use client mode with py-files and archives
-        # Include optimizations for 6 executors × 6GB configuration
+        # Construct spark-submit command
         cmd = f"""spark-submit \\
             --master yarn \\
             --deploy-mode client \\
             --num-executors {self.args.num_executors} \\
-            --executor-cores {self.args.executor_cores} \\
             --executor-memory {self.args.executor_memory} \\
             --driver-memory {self.args.driver_memory} \\
             --conf spark.dynamicAllocation.enabled=false \\
-            --conf spark.executor.memoryOverhead={self.args.memory_overhead} \\
-            --conf spark.default.parallelism={self.args.default_parallelism} \\
-            --conf spark.sql.shuffle.partitions={self.args.shuffle_partitions} \\
-            --conf spark.memory.fraction=0.8 \\
-            --conf spark.memory.storageFraction=0.3 \\
-            --conf spark.shuffle.compress=true \\
-            --conf spark.shuffle.spill.compress=true \\
-            --conf spark.network.timeout=600s \\
-            --conf spark.executor.heartbeatInterval=60s \\
-            --conf spark.yarn.appMasterEnv.PYTHONPATH=happybase_deps.zip \\
-            --conf spark.executorEnv.PYTHONPATH=happybase_deps.zip \\
-            --py-files {hbase_connector} \\
-            --archives {happybase_deps}#happybase_deps.zip \\
+            --py-files hbase_connector.py \\
             {spark_script} \\
             {query_file} \\
-            {thrift_host} \\
+            {self.args.thrift_host} \\
             {self.args.thrift_port}"""
 
         start_time = time.time()
@@ -273,37 +244,18 @@ class SparkHBasePipelineRunner:
         print("="*80)
 
         spark_script = os.path.join(self.script_dir, 'spark_hbase_pairwise.py')
-        hbase_connector = os.path.join(self.script_dir, 'hbase_connector.py')
-        happybase_deps = os.path.join(self.script_dir, 'happybase_deps.zip')
 
-        # Use hadoop-master for Thrift host to ensure worker nodes can connect
-        thrift_host = 'hadoop-master' if self.args.thrift_host == 'localhost' else self.args.thrift_host
-
-        # Construct spark-submit command - use client mode with py-files and archives
-        # Include optimizations for 6 executors × 6GB configuration
+        # Construct spark-submit command
         cmd = f"""spark-submit \\
             --master yarn \\
-            --deploy-mode client \\
+            --deploy-mode cluster \\
             --num-executors {self.args.num_executors} \\
-            --executor-cores {self.args.executor_cores} \\
             --executor-memory {self.args.executor_memory} \\
             --driver-memory {self.args.driver_memory} \\
             --conf spark.dynamicAllocation.enabled=false \\
-            --conf spark.executor.memoryOverhead={self.args.memory_overhead} \\
-            --conf spark.default.parallelism={self.args.default_parallelism} \\
-            --conf spark.sql.shuffle.partitions={self.args.shuffle_partitions} \\
-            --conf spark.memory.fraction=0.8 \\
-            --conf spark.memory.storageFraction=0.3 \\
-            --conf spark.shuffle.compress=true \\
-            --conf spark.shuffle.spill.compress=true \\
-            --conf spark.network.timeout=600s \\
-            --conf spark.executor.heartbeatInterval=60s \\
-            --conf spark.yarn.appMasterEnv.PYTHONPATH=happybase_deps.zip \\
-            --conf spark.executorEnv.PYTHONPATH=happybase_deps.zip \\
-            --py-files {hbase_connector} \\
-            --archives {happybase_deps}#happybase_deps.zip \\
+            --py-files hbase_connector.py \\
             {spark_script} \\
-            {thrift_host} \\
+            {self.args.thrift_host} \\
             {self.args.thrift_port}"""
 
         start_time = time.time()
@@ -337,15 +289,38 @@ class SparkHBasePipelineRunner:
                 self.metrics['similarity_pairs'] / self.metrics['stage2_time_sec'] if self.metrics['stage2_time_sec'] > 0 else 0,
                 2
             )
+    def format_output(self, results):
+        if not results:
+            return "No results found."
+
+        # Header
+        lines = []
+        lines.append("=" * 140)
+        lines.append("## 🏆 Top Ebooks Ranking 🏆")
+        lines.append("=" * 140)
+        # UPDATED HEADER
+        lines.append(f"{'Rank':<6} | {'Ebook Name':<30} | {'Jaccard':<10} | {'F1-Score':<10} | {'Overlap':<10} | {'Shared Terms':<12}")
+        lines.append("-" * 140)
+
+        # Rows
+        for i, result in enumerate(results, 1):
+            lines.append(
+                f"{i:<7} {result.get('doc_pair', 'N/A'):<32} "
+                f"{result.get('similarity', 0.0):<13.2f} {result.get('f1_score', 0.0):<13.3f} "
+                f"{result.get('overlap_score', 0.0):<13.3f} {result.get('match_count', 0):<12}"
+            )
+
+        lines.append("=" * 140)
+        lines.append(f"Total results shown: {len(results)}")
+        lines.append("")
+
+        return "\n".join(lines)
 
     def save_metrics_to_csv(self):
         """Save metrics to mode-specific CSV file"""
-        metrics_dir = os.path.join(self.script_dir, 'metrics')
-        os.makedirs(metrics_dir, exist_ok=True)
-
         # Choose CSV file based on mode
         if self.mode == 'jpii':
-            csv_file = os.path.join(metrics_dir, 'spark_hbase_jpii_metrics.csv')
+            csv_file = os.path.join(self.script_dir, 'spark_hbase_jpii_metrics.csv')
             fieldnames = [
                 'timestamp',
                 'mode',
@@ -367,7 +342,7 @@ class SparkHBasePipelineRunner:
             ]
 
         elif self.mode == 'pairwise':
-            csv_file = os.path.join(metrics_dir, 'spark_hbase_pairwise_metrics.csv')
+            csv_file = os.path.join(self.script_dir, 'spark_hbase_pairwise_metrics.csv')
             fieldnames = [
                 'timestamp',
                 'mode',
@@ -470,31 +445,65 @@ class SparkHBasePipelineRunner:
 
                 query_file_path = self.args.query_file
                 print(f"[INFO] Using query file: {query_file_path}")
+                
+                with open(query_file_path, 'r') as f:
+                    query_content = f.read()
+                query_hash = self.normalize_and_hash_query(query_content)
+            
+            import sys
+            sys.path.append(self.script_dir)
+            from hbase_connector import HBaseConnector
 
-            # Run Stage 1: Inverted Index
-            self.run_inverted_index()
+            connector = HBaseConnector(
+                host=self.args.thrift_host,
+                port=self.args.thrift_port
+            )
+            rank_result =[]
+            rank_result = connector.read_query_cache(query_hash)
+            if not rank_result: 
+                # Run Stage 1: Inverted Index
+                self.run_inverted_index()
 
-            # Run Stage 2: Mode-specific similarity computation
-            if self.mode == 'jpii':
-                self.run_jpii(query_file_path)
-            elif self.mode == 'pairwise':
-                self.run_pairwise()
+                # Run Stage 2: Mode-specific similarity computation
+                if self.mode == 'jpii':
+                    print('nothing')
+                    #self.run_jpii(query_file_path)
+                elif self.mode == 'pairwise':
+                    self.run_pairwise()
 
-            # Get HBase metrics
-            self.get_hbase_metrics()
+                # Get HBase metrics
+                self.get_hbase_metrics()
 
-            # Calculate totals
-            self.calculate_totals()
+                # Calculate totals
+                self.calculate_totals()
 
-            # Display summary
-            self.display_summary()
+                # Display summary
+                self.display_summary()
 
-            # Save metrics to CSV
-            self.save_metrics_to_csv()
-
-            print(f"\n[SUCCESS] Pipeline completed successfully!")
-            print(f"[INFO] Results stored in HBase table: similarity_scores")
-            print(f"[INFO] Query results using: python3 query_similarity.py --mode {self.mode}")
+                # Save metrics to CSV
+                self.save_metrics_to_csv()
+                
+                # Run Stage 3: Ranking Search
+                if self.mode == 'jpii':
+                    command = f""" python3 query_similarity.py --mode {self.mode} --query_hash {query_hash}"""
+                else:
+                    command = f""" python3 query_similarity.py --mode {self.mode}"""
+                #command = [sys.executable, "query_similarity.py", f"--mode {self.mode}"]
+                result = subprocess.run(
+                        command,
+                        shell=True,
+                        capture_output=True,
+                        text=True,
+                        timeout=3600  # 1 hour timeout
+                    )
+                print(f"\n[SUCCESS] Pipeline completed successfully!")
+                print(f"[INFO] Results stored in HBase table: similarity_scores")
+                print(f"[INFO] Query results using: python3 query_similarity.py --mode {self.mode}")
+                print(result.stdout.strip())
+            else:
+                table = self.format_output(rank_result)
+                print("\n" + table)
+                
 
         except Exception as e:
             print(f"\n[FATAL ERROR] Pipeline failed: {e}")
@@ -546,20 +555,12 @@ Examples:
                         help='Path to local file containing query text (required for JPII mode)')
 
     # Spark configuration
-    parser.add_argument('--num-executors', type=int, default=6,
-                        help='Number of Spark executors (default: 6, optimized for 6x6GB)')
-    parser.add_argument('--executor-cores', type=int, default=4,
-                        help='Number of cores per executor (default: 4)')
-    parser.add_argument('--executor-memory', type=str, default='6G',
-                        help='Memory per executor (default: 6G)')
+    parser.add_argument('--num-executors', type=int, default=4,
+                        help='Number of Spark executors (default: 4)')
+    parser.add_argument('--executor-memory', type=str, default='4G',
+                        help='Memory per executor (default: 4G)')
     parser.add_argument('--driver-memory', type=str, default='2G',
                         help='Driver memory (default: 2G)')
-    parser.add_argument('--memory-overhead', type=str, default='1G',
-                        help='Executor memory overhead (default: 1G)')
-    parser.add_argument('--default-parallelism', type=int, default=48,
-                        help='Default parallelism (default: 48 = 6 executors × 4 cores × 2)')
-    parser.add_argument('--shuffle-partitions', type=int, default=48,
-                        help='Shuffle partitions (default: 48)')
 
     args = parser.parse_args()
 

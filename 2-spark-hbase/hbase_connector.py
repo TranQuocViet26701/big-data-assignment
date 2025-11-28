@@ -19,6 +19,7 @@ import happybase
 import time
 from typing import Iterator, Dict, List, Tuple, Optional
 import logging
+import json
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -156,48 +157,6 @@ class HBaseConnector:
             logger.error(f"Error reading term '{term}': {e}")
             return {}
 
-    def bulk_read_inverted_index_terms(self, terms: List[str]) -> Dict[str, Dict[str, int]]:
-        """
-        Bulk read multiple terms from inverted_index in a single batch.
-
-        OPTIMIZATION: Use HBase batch API to reduce round trips.
-
-        Args:
-            terms: List of terms to look up
-
-        Returns:
-            Dictionary mapping terms to their document dictionaries
-            Example: {'term1': {'book1.txt': 123}, 'term2': {'book2.txt': 456}}
-        """
-        if not terms:
-            return {}
-
-        table = self.connection.table('inverted_index')
-        results = {}
-
-        try:
-            # Use batch get for efficient bulk read
-            row_keys = [term.encode('utf-8') for term in terms]
-            rows = table.rows(row_keys)
-
-            for term_bytes, row_data in rows:
-                term = term_bytes.decode('utf-8')
-                docs = {}
-
-                # Parse HBase row
-                for col_name, value in row_data.items():
-                    doc_name = col_name.decode('utf-8').replace('docs:', '')
-                    word_count = int(value.decode('utf-8'))
-                    docs[doc_name] = word_count
-
-                results[term] = docs
-
-            return results
-
-        except Exception as e:
-            logger.error(f"Error reading term '{term}': {e}")
-            return {}
-
     def scan_inverted_index(
         self,
         limit: Optional[int] = None,
@@ -310,7 +269,162 @@ class HBaseConnector:
             logger.error(f"Error writing similarity scores: {e}")
             raise
 
+    def write_query_cache(self, query_hash: str, top5_results: List[Dict]) -> int:
+        """
+        Lưu toàn bộ top-k kết quả vào một row duy nhất trong HBase.
+        RowKey: query_hash
+        Column Family: ranking_search
+            - ranking_search:data (JSON chứa toàn bộ kết quả)
+            - ranking_search:saved_at (timestamp lưu)
+        """
+        table = self.connection.table('query_cache')
+        timestamp_str = str(int(time.time()))
+
+        if not top5_results:
+            logger.warning("The result is empty.")
+            return 0
+
+        try:
+            results_json_str = json.dumps(top5_results, ensure_ascii=False)
+
+            table.put(
+                query_hash.encode('utf-8'),
+                {
+                    b'ranking_search:data': results_json_str.encode('utf-8'),
+                    b'ranking_search:saved_at': timestamp_str.encode('utf-8'),
+                }
+            )
+
+            logger.info(f"Wrote {len(top5_results)} results for query {query_hash}")
+            return len(top5_results)
+
+        except Exception as e:
+            logger.error(f"Error writing query cache: {e}")
+            return 0
+            
+    def read_query_cache(self, query_hash: str, ttl_seconds: int = 3600) -> List[Dict]:
+        """
+        Retrieves cached results from HBase based on the query_hash.
+
+        Args:
+            query_hash: The unique hash of the query used as the RowKey.
+            ttl_seconds: Time-To-Live in seconds (default: 1 hour).
+                         If the cached data is older than this duration, it is considered a cache miss.
+
+        Returns:
+            List[Dict]: A list of results if a valid cache hit occurs.
+            []: Returns an empty list on cache miss, expiration, or error.
+        """
+        table = self.connection.table('query_cache')
+        
+        try:
+            # 1. Retrieve the row from HBase using RowKey
+            # The returned row is a dictionary: {b'family:col': b'value', ...}
+            row = table.row(query_hash.encode('utf-8'))
+
+            # 2. Check for Cache Miss (row not found)
+            if not row:
+                # logger.debug(f"Cache miss for query {query_hash}")
+                return []
+
+            # 3. Get raw data (bytes)
+            data_bytes = row.get(b'ranking_search:data')
+            saved_at_bytes = row.get(b'ranking_search:saved_at')
+
+            # If the main data is missing, treat it as empty/error
+            if data_bytes is None:
+                return []
+
+            # 4. TTL Check (Expiration verification)
+            if saved_at_bytes and ttl_seconds > 0:
+                try:
+                    saved_at = float(saved_at_bytes.decode('utf-8'))
+                    current_time = time.time()
+                    
+                    # Check if the cache has expired
+                    if current_time - saved_at > ttl_seconds:
+                        logger.info(f"Cache expired for query {query_hash} (Age: {current_time - saved_at:.2f}s)")
+                        return [] 
+                except ValueError:
+                    # If timestamp parsing fails, ignore TTL or return empty depending on policy
+                    pass
+
+            # 5. Deserialize: bytes -> string -> json list
+            json_str = data_bytes.decode('utf-8')
+            results = json.loads(json_str)
+
+            logger.info(f"Cache hit for query {query_hash} ({len(results)} items)")
+            return results
+
+        except Exception as e:
+            logger.error(f"Error reading query cache: {e}")
+            return []
+
+
     def query_similarity(
+        self,
+        mode: str,
+        document: Optional[str] = None,
+        threshold: float = 0.0,
+        limit: Optional[int] = None
+    ) -> List[Dict]:
+        """
+        Query similarity scores from HBase.
+
+        Args:
+            mode: 'jpii' or 'pairwise'
+            document: Document name to filter (for JPII mode)
+            threshold: Minimum similarity threshold
+            limit: Maximum number of results
+
+        Returns:
+            List of similarity result dictionaries, sorted by similarity (descending)
+        """
+        table = self.connection.table('similarity_scores')
+        results = []
+
+        try:
+            # Construct row prefix for scanning
+            if document:
+                row_prefix = f"{mode}:{document}-".encode('utf-8')
+            else:
+                row_prefix = f"{mode}:".encode('utf-8')
+
+            # Scan table
+            for key, data in table.scan(row_prefix=row_prefix):
+                similarity = float(data.get(b'score:similarity', b'0').decode('utf-8'))
+
+                # Apply threshold filter
+                if similarity < threshold:
+                    continue
+
+                doc_pair = key.decode('utf-8').replace(f"{mode}:", '')
+
+                result = {
+                    'doc_pair': doc_pair,
+                    'similarity': similarity,
+                    'match_count': int(data.get(b'score:match_count', b'0').decode('utf-8')),
+                    'w1': int(data.get(b'score:w1', b'0').decode('utf-8')),
+                    'w2': int(data.get(b'score:w2', b'0').decode('utf-8')),
+                    'timestamp': data.get(b'meta:timestamp', b'').decode('utf-8'),
+                    'mode': data.get(b'meta:mode', b'').decode('utf-8')
+                }
+
+                results.append(result)
+
+            # Sort by similarity (descending)
+            results.sort(key=lambda x: x['similarity'], reverse=True)
+
+            # Apply limit
+            if limit:
+                results = results[:limit]
+
+            return results
+
+        except Exception as e:
+            logger.error(f"Error querying similarity scores: {e}")
+            return []
+    def query_cache(
         self,
         mode: str,
         document: Optional[str] = None,
@@ -385,45 +499,6 @@ class HBaseConnector:
             logger.error(f"Error truncating table: {e}")
             raise
 
-    def get_all_term_docs(self) -> List[Tuple[str, Dict[str, int]]]:
-        """
-        Read ALL term-document mappings from inverted_index table.
-
-        This is more efficient than calling get_all_terms() + read_inverted_index_term()
-        for each term separately.
-
-        Returns:
-            List of (term, {doc: count, ...}) tuples
-
-        Schema:
-            Row Key: term
-            Columns: docs:<document_name> -> word_count
-        """
-        try:
-            table = self.connection.table('inverted_index')
-            term_docs_list = []
-
-            # Scan entire table
-            for key, data in table.scan():
-                term = key.decode('utf-8')
-
-                # Parse columns: {b'docs:book1.txt': b'123', b'docs:book2.txt': b'456', ...}
-                docs = {}
-                for col_name, value in data.items():
-                    # Extract document name from column qualifier
-                    doc_name = col_name.decode('utf-8').replace('docs:', '')
-                    word_count = int(value.decode('utf-8'))
-                    docs[doc_name] = word_count
-
-                if docs:
-                    term_docs_list.append((term, docs))
-
-            logger.info(f"Loaded {len(term_docs_list)} terms from inverted_index")
-            return term_docs_list
-
-        except Exception as e:
-            logger.error(f"Failed to get all term-docs: {e}")
-            return []
 
 def test_connection(host: str = 'localhost', port: int = 9090) -> bool:
     """

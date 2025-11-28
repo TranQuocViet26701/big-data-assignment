@@ -233,6 +233,8 @@ Examples:
                         help='HBase Thrift server hostname (default: localhost)')
     parser.add_argument('--thrift-port', type=int, default=9090,
                         help='HBase Thrift server port (default: 9090)')
+    parser.add_argument('--query_hash', type=str, 
+                        help='Query Hash Content Input')
 
     args = parser.parse_args()
 
@@ -268,6 +270,7 @@ Examples:
         # We perform global sorting and enrich the data with F1/Overlap here.
         # This function also filters by TOP_K limit.
         ranked_results = rank_candidates(results, args.mode)
+        connector.write_query_cache(args.query_hash, ranked_results)
         
         print(f"[SUCCESS] Found {len(ranked_results)} ranked results")
 

@@ -70,6 +70,26 @@ echo "HBase Tables Summary"
 echo "=================================="
 
 hbase shell <<EOF
+# Disable table if exists (for re-creation)
+disable 'ranking_seach' if exists
+drop 'ranking_seach' if exists
+
+# Create table with two column families
+create 'ranking_seach', 'score', 'meta'
+
+# Verify creation
+describe 'similarity_scores'
+EOF
+
+echo ""
+echo "[SUCCESS] 'similarity_scores' table created successfully"
+
+echo ""
+echo "=================================="
+echo "HBase Tables Summary"
+echo "=================================="
+
+hbase shell <<EOF
 list
 EOF
 
